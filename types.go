@@ -2,6 +2,8 @@ package firecore
 
 import (
 	"fmt"
+	"github.com/streamingfast/logging"
+	"go.uber.org/zap"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -101,9 +103,12 @@ func NewGenericBlockEncoder(protocolVersion int32) BlockEncoder {
 	})
 }
 
+var zlog, _ = logging.PackageLogger("types", "github.com/streamingfast/firehose-core/types")
+
 func EncodeBlock(protocolVersion int32, b Block) (blk *bstream.Block, err error) {
 	content, err := proto.Marshal(b)
 	if err != nil {
+		zlog.Error("failed to marshal to binary", zap.Error(err), zap.Any("block", b))
 		return nil, fmt.Errorf("unable to marshal to binary form: %s", err)
 	}
 
