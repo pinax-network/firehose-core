@@ -223,3 +223,5 @@ replace (
 	github.com/ShinyTrinkets/overseer => github.com/streamingfast/overseer v0.2.1-0.20210326144022-ee491780e3ef
 	github.com/bytecodealliance/wasmtime-go/v4 => github.com/streamingfast/wasmtime-go/v4 v4.0.0-freemem3
 )
+
+replace github.com/eoscanada/eos-go => github.com/pinax-network/eos-go v0.0.0-20231009141953-694a0a9f90f6

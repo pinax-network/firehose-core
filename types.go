@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/streamingfast/logging"
 	"go.uber.org/zap"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -108,6 +109,20 @@ var zlog, _ = logging.PackageLogger("types", "github.com/streamingfast/firehose-
 func EncodeBlock(protocolVersion int32, b Block) (blk *bstream.Block, err error) {
 	content, err := proto.Marshal(b)
 	if err != nil {
+		f, err2 := os.Create(fmt.Sprintf("/tmp/%d.block", b.GetFirehoseBlockNumber()))
+		if err2 != nil {
+			zlog.Error("failed to create tmp file for invalid block")
+			return nil, fmt.Errorf("unable to marshal to binary form: %s", err)
+		}
+
+		zap.Any("test", blk)
+
+		_, err2 = f.WriteString(blk)
+		if err2 != nil {
+			zlog.Error("failed to write block to tmp file")
+			return nil, fmt.Errorf("unable to marshal to binary form: %s", err)
+		}
+
 		zlog.Error("failed to marshal to binary", zap.Error(err), zap.Any("block", b))
 		return nil, fmt.Errorf("unable to marshal to binary form: %s", err)
 	}
