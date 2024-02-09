@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"github.com/streamingfast/dtracing"
 	"net/url"
 	"strings"
 	"time"
@@ -83,6 +84,7 @@ func New(
 			UserID:    auth.UserID(),
 			ApiKeyID:  auth.APIKeyID(),
 			IpAddress: auth.RealIP(),
+			TraceId:   dtracing.GetTraceID(ctx).String(),
 			Meta:      auth.Meta(),
 			Endpoint:  "sf.firehose.v2.Firehose/Blocks",
 			Metrics: map[string]float64{
