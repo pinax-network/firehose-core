@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"github.com/streamingfast/dtracing"
 	"net/url"
 	"strings"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/streamingfast/firehose-core/firehose/rate"
 	pbfirehoseV1 "github.com/streamingfast/pbgo/sf/firehose/v1"
 	pbfirehoseV2 "github.com/streamingfast/pbgo/sf/firehose/v2"
+	tracing "github.com/streamingfast/sf-tracing"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
@@ -84,7 +84,7 @@ func New(
 			UserID:    auth.UserID(),
 			ApiKeyID:  auth.APIKeyID(),
 			IpAddress: auth.RealIP(),
-			TraceId:   dtracing.GetTraceID(ctx).String(),
+			TraceId:   tracing.GetTraceID(ctx).String(),
 			Meta:      auth.Meta(),
 			Endpoint:  "sf.firehose.v2.Firehose/Blocks",
 			Metrics: map[string]float64{
