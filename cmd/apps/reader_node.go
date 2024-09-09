@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"time"
 
 	"github.com/kballard/go-shellquote"
@@ -68,6 +69,7 @@ func RegisterReaderNodeApp[B firecore.Block](chain *firecore.Chain[B], rootLog *
 				for writes. You should set this flag if you have multiple reader running, each one should get a unique identifier, the
 				hostname value is a good value to use.
 			`))
+			cmd.Flags().String("reader-node-one-block-compression", "zstd", "Compression to use on one-block files. Valid values are 'none', 'gzip', 'zstd'")
 			return nil
 		},
 		InitFunc: func(runtime *launcher.Runtime) error {
@@ -179,6 +181,13 @@ func RegisterReaderNodeApp[B firecore.Block](chain *firecore.Chain[B], rootLog *
 			gprcListenAddr := viper.GetString("reader-node-grpc-listen-addr")
 			oneBlockFileSuffix := viper.GetString("reader-node-one-block-suffix")
 			blocksChanCapacity := viper.GetInt("reader-node-blocks-chan-capacity")
+			oneBlockCompression := viper.GetString("reader-node-one-block-compression")
+			if !slices.Contains([]string{"none", "gzip", "zstd"}, oneBlockCompression) {
+				return nil, fmt.Errorf("invalid value for 'reader-node-one-block-compression': %q, expected one of 'none', 'zstd', 'gzip'", oneBlockCompression)
+			}
+			if oneBlockCompression == "none" {
+				oneBlockCompression = ""
+			}
 
 			readerPlugin, err := reader.NewMindReaderPlugin(
 				oneBlocksStoreURL,
@@ -194,6 +203,7 @@ func RegisterReaderNodeApp[B firecore.Block](chain *firecore.Chain[B], rootLog *
 					chainOperator.Shutdown(nil)
 				},
 				oneBlockFileSuffix,
+				oneBlockCompression,
 				blockStreamServer,
 				appLogger,
 				appTracer,

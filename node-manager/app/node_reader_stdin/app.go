@@ -37,6 +37,7 @@ type Config struct {
 	GRPCAddr                   string
 	OneBlocksStoreURL          string
 	OneBlockSuffix             string
+	OneBlockCompression        string
 	MindReadBlocksChanCapacity int
 	StartBlockNum              uint64
 	StopBlockNum               uint64
@@ -97,6 +98,7 @@ func (a *App) Run() error {
 		a.modules.MetricsAndReadinessManager.UpdateHeadBlock,
 		func(_ error) {},
 		a.Config.OneBlockSuffix,
+		a.Config.OneBlockCompression,
 		blockStreamServer,
 		a.zlogger,
 		a.tracer,

@@ -87,6 +87,7 @@ func NewMindReaderPlugin(
 	headBlockUpdater nodeManager.HeadBlockUpdater,
 	shutdownFunc func(error),
 	oneBlockSuffix string,
+	oneBlockCompression string,
 	blockStreamServer *blockstream.Server,
 	zlogger *zap.Logger,
 	tracer logging.Tracer,
@@ -99,6 +100,7 @@ func NewMindReaderPlugin(
 	zlogger.Info("creating mindreader plugin",
 		zap.String("one_blocks_store_url", oneBlocksStoreURL),
 		zap.String("one_block_suffix", oneBlockSuffix),
+		zap.String("one_block_compression", oneBlockCompression),
 		zap.String("working_directory", workingDirectory),
 		zap.Uint64("start_block_num", startBlockNum),
 		zap.Uint64("stop_block_num", stopBlockNum),
@@ -120,7 +122,14 @@ func NewMindReaderPlugin(
 		return nil, fmt.Errorf("new local one block store: %w", err)
 	}
 
-	remoteOneBlocksStore, err := dstore.NewStore(oneBlocksStoreURL, "dbin.zst", "zstd", false)
+	extension := "dbin"
+	if oneBlockCompression == "zstd" {
+		extension = "dbin.zst"
+	} else if oneBlockCompression == "gzip" {
+		extension = "dbin.gz"
+	}
+
+	remoteOneBlocksStore, err := dstore.NewStore(oneBlocksStoreURL, extension, oneBlockCompression, false)
 	if err != nil {
 		return nil, fmt.Errorf("new remote one block store: %w", err)
 	}
