@@ -46,7 +46,7 @@ type Config struct {
 
 	// MaxLineLengthInBytes configures the maximum bytes a single line consumed can be
 	// without any error. If left unspecified or 0, the default is 50 MiB (50 * 1024 * 1024).
-	MaxLineLengthInBytes int64
+	MaxLineLengthInBytes uint64
 }
 
 type Modules struct {

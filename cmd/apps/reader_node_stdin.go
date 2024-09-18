@@ -56,6 +56,7 @@ func RegisterReaderNodeStdinApp[B firecore.Block](chain *firecore.Chain[B], root
 				StopBlockNum:               viper.GetUint64("reader-node-stop-block-num"),
 				WorkingDir:                 firecore.MustReplaceDataDir(sfDataDir, viper.GetString("reader-node-working-dir")),
 				OneBlockSuffix:             viper.GetString("reader-node-one-block-suffix"),
+				MaxLineLengthInBytes:       viper.GetUint64("reader-node-line-buffer-size"),
 			}, &nodeReaderStdinApp.Modules{
 				ConsoleReaderFactory:       consoleReaderFactory,
 				MetricsAndReadinessManager: metricsAndReadinessManager,
