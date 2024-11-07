@@ -8,6 +8,10 @@ Operators, you should copy/paste content of this content straight to your projec
 
 If you were at `firehose-core` version `1.0.0` and are bumping to `1.1.0`, you should copy the content between those 2 version to your own repository, replacing placeholder value `fire{chain}` with your chain's own binary.
 
+## v1.6.6
+
+* Bump `substreams` and `dmetering` to latest version adding the `outputModuleHash` to metering sender.
+
 ## v1.6.5
 
 ### Substreams fixes
@@ -61,24 +65,24 @@ If you were at `firehose-core` version `1.0.0` and are bumping to `1.1.0`, you s
 
 ## v1.6.1
 
-* Bump substreams to v1.10.0: Version 1.10.0 adds a new `EndpointInfo/Info` endpoint, introduces a 3-minute default execution timeout per block, updates metering metrics with a deprecation warning, enhances `substreams init` commands, and improves wasm module caching and Prometheus tool flexibility. Full changelog: https://github.com/streamingfast/substreams/releases/tag/v1.10.0
+* Bump substreams to v1.10.0: Version 1.10.0 adds a new `EndpointInfo/Info` endpoint, introduces a 3-minute default execution timeout per block, updates metering metrics with a deprecation warning, enhances `substreams init` commands, and improves wasm module caching and Prometheus tool flexibility. Full changelog: <https://github.com/streamingfast/substreams/releases/tag/v1.10.0>
 * Metering update: more detailed metering with addition of new metrics. *DEPRECATION WARNING*: `bytes_read` and `bytes_written` metrics will be removed in the future, please use the new metrics for metering instead
 
 ## v1.6.0
 
 * Add `sf.firehose.v2.EndpointInfo/Info` service on Firehose and `sf.substreams.rpc.v2.EndpointInfo/Info` to Substreams endpoints. This involves the following new flags:
-  - `advertise-chain-name` Canonical name of the chain according to https://thegraph.com/docs/en/developing/supported-networks/ (required, unless it is in the "well-known" list)
-  - `advertise-chain-aliases` Alternate names for that chain (optional)
-  - `advertise-block-features` List of features describing the blocks (optional)
-  - `advertise-block-id-encoding` Encoding format of the block ID [BLOCK_ID_ENCODING_BASE58, BLOCK_ID_ENCODING_BASE64, BLOCK_ID_ENCODING_BASE64URL, BLOCK_ID_ENCODING_HEX, BLOCK_ID_ENCODING_0X_HEX] (required, unless the block type is in the "well-known" list)
-  - `ignore-advertise-validation` Runtime checks of chain name/features/encoding against the genesis block will no longer cause server to wait or fail.
+  * `advertise-chain-name` Canonical name of the chain according to <https://thegraph.com/docs/en/developing/supported-networks/> (required, unless it is in the "well-known" list)
+  * `advertise-chain-aliases` Alternate names for that chain (optional)
+  * `advertise-block-features` List of features describing the blocks (optional)
+  * `advertise-block-id-encoding` Encoding format of the block ID [BLOCK_ID_ENCODING_BASE58, BLOCK_ID_ENCODING_BASE64, BLOCK_ID_ENCODING_BASE64URL, BLOCK_ID_ENCODING_HEX, BLOCK_ID_ENCODING_0X_HEX] (required, unless the block type is in the "well-known" list)
+  * `ignore-advertise-validation` Runtime checks of chain name/features/encoding against the genesis block will no longer cause server to wait or fail.
 
 * Add a well-known list of chains (hard-coded in `wellknown/chains.go` to help automatically determine the 'advertise' flag values). Users are encouraged to propose Pull Requests to add more chains to the list.
 * The new info endpoint adds a mandatory fetching of the first streamable block on startup, with a failure if no block can be fetched after 3 minutes and you are running `firehose` or `substreams-tier1` service.
   It validates the following on a well-known chain:
-    - if the first-streamable-block Num/ID match the genesis block of a known chain, e.g. `matic`, it will refuse another value for `advertise-chain-name` than `matic` or one of its aliases (`polygon`)
-    - If the first-streamable-block does not match any known chain, it will require the `advertise-chain-name` to be non-empty
-    - If the first-streamable-block type is unknown (i.e. not ethereum, solana, near, cosmos, bitcoin...), it will require the user to provide `advertise-chain-name` as well as `advertise-block-id-encoding`
+  * if the first-streamable-block Num/ID match the genesis block of a known chain, e.g. `matic`, it will refuse another value for `advertise-chain-name` than `matic` or one of its aliases (`polygon`)
+  * If the first-streamable-block does not match any known chain, it will require the `advertise-chain-name` to be non-empty
+  * If the first-streamable-block type is unknown (i.e. not ethereum, solana, near, cosmos, bitcoin...), it will require the user to provide `advertise-chain-name` as well as `advertise-block-id-encoding`
 
 * Substreams: add `--common-tmp-dir` flag and activate local caching of pre-compiled WASM modules through wazero feature
 * Substreams: revert module hash calculation from `v1.5.5`, when using a non-zero firstStreamableBlock. Hashes will now be the same even if the chain's first streamable block affects the initialBlock of a module.
@@ -135,7 +139,7 @@ If you were at `firehose-core` version `1.0.0` and are bumping to `1.1.0`, you s
 
 ### Highlights
 
-- Substreams engine is now able run Rust code that depends on `solana_program` in Solana land to decode and `alloy/ether-rs` in Ethereum land
+* Substreams engine is now able run Rust code that depends on `solana_program` in Solana land to decode and `alloy/ether-rs` in Ethereum land
 
 #### How to use `solana_program` or `alloy`/`ether-rs`
 
@@ -192,7 +196,7 @@ binaries:
 
 > **Note** Upgrading will require changing the tier1 and tier2 versions concurrently, as the internal protocol has changed.
 
-* *Index Modules* and *Block Filter* now supported. See https://github.com/streamingfast/substreams-foundational-modules for an example implementation
+* *Index Modules* and *Block Filter* now supported. See <https://github.com/streamingfast/substreams-foundational-modules> for an example implementation
 * Various scheduling and performance improvements
 * env variable `SUBSTREAMS_WORKERS_RAMPUP_TIME` changed from `4s` to `0`. Set it to `4s` to keep previous behavior
 * `otelcol://` tracing protocol no longer supported
@@ -279,7 +283,7 @@ binaries:
 
 ### Substreams
 
-* Substreams bumped to @v1.5.0: See https://github.com/streamingfast/substreams/releases/tag/v1.5.0 for details.
+* Substreams bumped to @v1.5.0: See <https://github.com/streamingfast/substreams/releases/tag/v1.5.0> for details.
 
 #### Chain-agnostic tier2
 
@@ -304,6 +308,7 @@ binaries:
 * Improved file listing performance for Google Storage backends by 25%
 
 > [!TIP]
+
 * Concurrent requests on the same module hashes may benefit from the other requests' work to a certain extent (up to 75%) -- The very first request does most of the work for the other ones.
 
 > [!TIP]
@@ -356,19 +361,20 @@ binaries:
 * Added the output module's hash to the "incoming request" log
 
 ### Reader node and Beacon blocks
+
 * The `reader-node-bootstrap-url` gained the ability to be bootstrapped from a `bash` script.
 
-	If the bootstrap URL is of the form `bash:///<path/to/script>?<parameters>`, the bash script at
-	`<path/to/script>` will be executed. The script is going to receive in environment variables the resolved
-	reader node variables in the form of `READER_NODE_<VARIABLE_NAME>`. The fully resolved node arguments
-	(from `reader-node-arguments`) are passed as args to the bash script. The query parameters accepted are:
+ If the bootstrap URL is of the form `bash:///<path/to/script>?<parameters>`, the bash script at
+ `<path/to/script>` will be executed. The script is going to receive in environment variables the resolved
+ reader node variables in the form of `READER_NODE_<VARIABLE_NAME>`. The fully resolved node arguments
+ (from `reader-node-arguments`) are passed as args to the bash script. The query parameters accepted are:
 
-	- `arg=<value>` | Pass as extra argument to the script, prepended to the list of resolved node arguments
-	- `env=<key>%3d<value>` | Pass as extra environment variable as `<key>=<value>` with key being upper-cased (multiple(s) allowed)
-	- `env_<key>=<value>` | Pass as extra environment variable as `<key>=<value>` with key being upper-cased (multiple(s) allowed)
-	- `cwd=<path>` | Change the working directory to `<path>` before running the script
-	- `interpreter=<path>` | Use `<path>` as the interpreter to run the script
-	- `interpreter_arg=<arg>` | Pass `<interpreter_arg>` as arguments to the interpreter before the script path (multiple(s) allowed)
+* `arg=<value>` | Pass as extra argument to the script, prepended to the list of resolved node arguments
+* `env=<key>%3d<value>` | Pass as extra environment variable as `<key>=<value>` with key being upper-cased (multiple(s) allowed)
+* `env_<key>=<value>` | Pass as extra environment variable as `<key>=<value>` with key being upper-cased (multiple(s) allowed)
+* `cwd=<path>` | Change the working directory to `<path>` before running the script
+* `interpreter=<path>` | Use `<path>` as the interpreter to run the script
+* `interpreter_arg=<arg>` | Pass `<interpreter_arg>` as arguments to the interpreter before the script path (multiple(s) allowed)
 
   > [!NOTE]
   > The `bash:///` script support is currently experimental and might change in upcoming releases, the behavior changes will be
@@ -379,8 +385,8 @@ binaries:
 * The `reader-node-bootstrap-data-url` is now added automatically if `firecore.Chain#ReaderNodeBootstrapperFactory` is `non-nil`.
 
   If the bootstrap URL ends with `tar.zst` or `tar.zstd`, the archive is read and extracted into the
-	`reader-node-data-dir` location. The archive is expected to contain the full content of the 'reader-node-data-dir'
-	and is expanded as is.
+ `reader-node-data-dir` location. The archive is expected to contain the full content of the 'reader-node-data-dir'
+ and is expanded as is.
 
 * Added `Beacon` to known list of Block model.
 
@@ -489,9 +495,9 @@ This is a major release.
 * New binary `firecore` which can run all firehose components (`reader`, `reader-stdin`, `merger`, `relayer`, `firehose`, `substreams-tier1|2`) in a chain-agnostic way. This is not mandatory (it can still be used as a library) but strongly suggested when possible.
 
 * Current Limitations on Ethereum:
-  - The firecore `firehose` app does not support transforms (filters, header-only --for graph-node compatibility--) so you will want to continue running this app from `fireeth`
-  - The firecore `substreams` apps do not support eth_calls so you will want to continue running them from `fireeth`
-  - The firecore `reader` does not support the block format output by the current geth firehose instrumentation, so you will want to continue running it from `fireeth`
+  * The firecore `firehose` app does not support transforms (filters, header-only --for graph-node compatibility--) so you will want to continue running this app from `fireeth`
+  * The firecore `substreams` apps do not support eth_calls so you will want to continue running them from `fireeth`
+  * The firecore `reader` does not support the block format output by the current geth firehose instrumentation, so you will want to continue running it from `fireeth`
 
 * New BlockPoller library to facilitate the implementation of rpc-poller-based chains, taking care of managing reorgs
 
@@ -520,7 +526,7 @@ This is a major release.
 
 ### Fixed
 
- * fixed typo in `check-merged-blocks` preventing its proper display of missing ranges
+* fixed typo in `check-merged-blocks` preventing its proper display of missing ranges
 
 ## v0.2.2
 
@@ -562,20 +568,24 @@ tools fix-bloated-merged-blocks <merged-blocks-store> <output-store> <start>:<st
 * Copy the merged-blocks files created in output-store over to the your merged-blocks-store, replacing the corrupted files.
 
 ### Removed
+
 * Removed the `--dedupe-blocks` flag on `tools download-from-firehose` as it can create confusion and more issues.
 
 ### Fixed
+
 * Bumped `bstream`: the `filesource` will now refuse to read blocks from a merged-files if they are not ordered or if there are any duplicate.
 * The command `tools download-from-firehose` will now fail if it is being served blocks "out of order", to prevent any corrupted merged-blocks from being created.
 * The command `tools print merged-blocks` did not print the whole merged-blocks file, the arguments were confusing: now it will parse <start_block> as a uint64.
 * The command `tools unmerge-blocks` did not cover the whole given range, now fixed
 
 ### Added
+
 * Added the command `tools fix-bloated-merged-blocks` to try to fix merged-blocks that contain duplicates and blocks outside of their range.
 * Command `tools print one-block and merged-blocks` now supports a new `--output-format` `jsonl` format.
 Bytes data can now printed as hex or base58 string instead of base64 string.
 
 ### Changed
+
 * Changed `tools check merged-blocks-batch` argument syntax: the output-to-store is now optional.
 
 ## v0.2.0
@@ -618,6 +628,7 @@ Bytes data can now printed as hex or base58 string instead of base64 string.
 The `--common-auth-plugin` got back the ability to use `secret://<expected_secret>?[user_id=<user_id>]&[api_key_id=<api_key_id>]` in which case request are authenticated based on the `Authorization: Bearer <actual_secret>` and continue only if `<actual_secret> == <expected_secret>`.
 
 ### Changed
+
 * Bumped `substreams` to `v1.1.17` with provider new metrics `substreams_active_requests` and `substreams_counter`
 
 ## v0.1.9
@@ -700,7 +711,6 @@ This release bumps Substreams to [v1.1.9](https://github.com/streamingfast/subst
 The `substreams` scheduler has been improved to reduce the number of required jobs for parallel processing. This affects `backprocessing` (preparing the states of modules up to a "start-block") and `forward processing` (preparing the states and the outputs to speed up streaming in production-mode).
 
 Jobs on `tier2` workers are now divided in "stages", each stage generating the partial states for all the modules that have the same dependencies. A `substreams` that has a single store won't be affected, but one that has 3 top-level stores, which used to run 3 jobs for every segment now only runs a single job per segment to get all the states ready.
-
 
 #### Substreams State Store Selection
 
