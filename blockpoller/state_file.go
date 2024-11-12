@@ -1,15 +1,15 @@
 package blockpoller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
-
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/forkable"
+	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 	"go.uber.org/zap"
 )
 
@@ -33,20 +33,36 @@ type stateFile struct {
 	Blocks         []blockRefWithPrev
 }
 
+func (p *BlockPoller) isStateFileExist(stateStorePath string) bool {
+	if stateStorePath == "" {
+		p.logger.Info("No state store path set, skipping cursor check")
+		return false
+	}
+	fp := filepath.Join(stateStorePath, "cursor.json")
+	_, err := os.Stat(fp)
+	exist := err == nil || os.IsExist(err)
+	p.logger.Info("cursor file check",
+		zap.String("state_store_path", stateStorePath),
+		zap.Bool("exist", exist),
+		zap.Error(err),
+	)
+	return exist
+}
+
 func getState(stateStorePath string) (*stateFile, error) {
 	if stateStorePath == "" {
 		return nil, fmt.Errorf("no cursor store path set")
 	}
 
-	filepath := filepath.Join(stateStorePath, "cursor.json")
-	file, err := os.Open(filepath)
+	fp := filepath.Join(stateStorePath, "cursor.json")
+	file, err := os.Open(fp)
 	if err != nil {
-		return nil, fmt.Errorf("unable to open cursor file %s: %w", filepath, err)
+		return nil, fmt.Errorf("unable to open cursor file %s: %w", fp, err)
 	}
 	sf := stateFile{}
 	decoder := json.NewDecoder(file)
 	if err := decoder.Decode(&sf); err != nil {
-		return nil, fmt.Errorf("feailed to decode cursor file %s: %w", filepath, err)
+		return nil, fmt.Errorf("feailed to decode cursor file %s: %w", fp, err)
 	}
 	return &sf, nil
 }
@@ -92,30 +108,36 @@ func (p *BlockPoller) saveState(blocks []*forkable.Block) error {
 	return nil
 }
 
-func initState(resolvedStartBlock bstream.BlockRef, stateStorePath string, ignoreCursor bool, logger *zap.Logger) (*forkable.ForkDB, bstream.BlockRef, error) {
+func (p *BlockPoller) initState(firstStreamableBlockNum uint64, stateStorePath string, ignoreCursor bool, logger *zap.Logger) (*forkable.ForkDB, bstream.BlockRef, error) {
 	forkDB := forkable.NewForkDB(forkable.ForkDBWithLogger(logger))
 
-	useStartBlockFunc := func() (*forkable.ForkDB, bstream.BlockRef, error) {
-		forkDB.InitLIB(resolvedStartBlock)
-		return forkDB, resolvedStartBlock, nil
+	if ignoreCursor || !p.isStateFileExist(stateStorePath) {
+		logger.Info("ignoring cursor, fetching first streamable block", zap.Uint64("first_streamable_block", firstStreamableBlockNum))
+
+		for {
+			firstStreamableBlock, skip, err := p.blockFetcher.Fetch(context.Background(), firstStreamableBlockNum)
+			firstStreamableBlockRef := firstStreamableBlock.AsRef()
+			if err != nil {
+				p.logger.Warn("fetching first streamable block", zap.Uint64("first_streamable_block", firstStreamableBlockNum), zap.Error(err))
+				continue
+			}
+			if skip {
+				return nil, nil, fmt.Errorf("expecting first streamable block %q not to be skiped", firstStreamableBlockRef)
+			}
+
+			logger.Info("ignoring cursor, will start from...",
+				zap.Stringer("first_streamable_block", firstStreamableBlockRef),
+				zap.Stringer("lib", firstStreamableBlockRef),
+			)
+			forkDB.InitLIB(firstStreamableBlockRef)
+
+			return forkDB, firstStreamableBlockRef, nil
+		}
 	}
 
-	if ignoreCursor {
-		logger.Info("ignorign cursor",
-			zap.Stringer("start_block", resolvedStartBlock),
-			zap.Stringer("lib", resolvedStartBlock),
-		)
-		return useStartBlockFunc()
-	}
-
-	sf, err := getState(stateStorePath)
+	sf, err := getState(stateStorePath) //at this point we expect the stateFile to exist ...
 	if err != nil {
-		logger.Warn("unable to load cursor file, initializing a new forkdb",
-			zap.Stringer("start_block", resolvedStartBlock),
-			zap.Stringer("lib", resolvedStartBlock),
-			zap.Error(err),
-		)
-		return useStartBlockFunc()
+		return nil, nil, fmt.Errorf("loading cursor: %w", err)
 	}
 
 	forkDB.InitLIB(bstream.NewBlockRef(sf.Lib.Id, sf.Lib.Num))

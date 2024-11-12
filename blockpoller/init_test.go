@@ -90,8 +90,6 @@ func newTestBlockFinalizer(t *testing.T, fireBlocks []*pbbstream.Block) *TestBlo
 }
 
 func (t *TestBlockFinalizer) Init() {
-	//TODO implement me
-	panic("implement me")
 }
 
 func (t *TestBlockFinalizer) Handle(blk *pbbstream.Block) error {

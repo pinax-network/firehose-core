@@ -42,10 +42,13 @@ func TestFireBlockFinalizer_state(t *testing.T) {
 
 	expectedStateFileCnt := `{"Lib":{"id":"101a","num":101},"LastFiredBlock":{"id":"105a","num":105,"previous_ref_id":"104a"},"Blocks":[{"id":"101a","num":101,"previous_ref_id":"100a"},{"id":"102a","num":102,"previous_ref_id":"101a"},{"id":"103a","num":103,"previous_ref_id":"102a"},{"id":"104a","num":104,"previous_ref_id":"103a"},{"id":"105a","num":105,"previous_ref_id":"104a"}]}`
 
+	blockFetcher := newTestBlockFetcher(t, []*TestBlock{tb("60a", "59a", 60)})
+
 	poller := &BlockPoller{
 		stateStorePath: dirName,
 		forkDB:         fk,
 		logger:         zap.NewNop(),
+		blockFetcher:   blockFetcher,
 	}
 	require.NoError(t, poller.saveState(expectedBlocks))
 
@@ -54,7 +57,7 @@ func TestFireBlockFinalizer_state(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, expectedStateFileCnt, string(cnt))
 
-	forkDB, startBlock, err := initState(bstream.NewBlockRef("60a", 60), dirName, false, zap.NewNop())
+	forkDB, startBlock, err := poller.initState(60, dirName, false, zap.NewNop())
 	require.NoError(t, err)
 
 	blocks, reachedLib := forkDB.CompleteSegment(bstream.NewBlockRef("105a", 105))
@@ -70,7 +73,14 @@ func TestFireBlockFinalizer_noSstate(t *testing.T) {
 	require.NoError(t, err)
 	defer os.Remove(dirName)
 
-	forkDB, startBlock, err := initState(bstream.NewBlockRef("60a", 60), dirName, false, logger)
+	blockFetcher := newTestBlockFetcher(t, []*TestBlock{tb("60a", "59a", 60)})
+	poller := &BlockPoller{
+		stateStorePath: dirName,
+		logger:         zap.NewNop(),
+		blockFetcher:   blockFetcher,
+	}
+
+	forkDB, startBlock, err := poller.initState(60, dirName, false, zap.NewNop())
 	require.NoError(t, err)
 
 	blocks, reachedLib := forkDB.CompleteSegment(bstream.NewBlockRef("60a", 60))
@@ -81,7 +91,8 @@ func TestFireBlockFinalizer_noSstate(t *testing.T) {
 	assert.False(t, reachedLib)
 	require.Equal(t, 0, len(blocks))
 
-	assert.Equal(t, bstream.NewBlockRef("60a", 60), startBlock)
+	assert.Equal(t, bstream.NewBlockRef("60a", 60).Num(), startBlock.Num())
+	assert.Equal(t, bstream.NewBlockRef("60a", 60).ID(), startBlock.ID())
 }
 
 func assertForkableBlocks(t *testing.T, expected, actual []*forkable.Block) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/streamingfast/bstream"
+
 	"github.com/streamingfast/bstream/forkable"
 	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 	"github.com/streamingfast/derr"
@@ -68,33 +69,24 @@ func New(
 	return b
 }
 
-func (p *BlockPoller) Run(ctx context.Context, startBlockNum uint64, blockFetchBatchSize int) error {
-	p.startBlockNumGate = startBlockNum
+func (p *BlockPoller) Run(ctx context.Context, firstStreamableBlockNum uint64, blockFetchBatchSize int) error {
+	p.startBlockNumGate = firstStreamableBlockNum
 	p.logger.Info("starting poller",
-		zap.Uint64("start_block_num", startBlockNum),
+		zap.Uint64("first_streamable_block", firstStreamableBlockNum),
 		zap.Uint64("block_fetch_batch_size", uint64(blockFetchBatchSize)),
 	)
 	p.blockHandler.Init()
 
-	for {
-		startBlock, skip, err := p.blockFetcher.Fetch(ctx, startBlockNum)
-		if err != nil {
-			return fmt.Errorf("unable to fetch start block %d: %w", startBlockNum, err)
-		}
-		if skip {
-			startBlockNum++
-			continue
-		}
-		return p.run(startBlock.AsRef(), blockFetchBatchSize)
-	}
-}
-
-func (p *BlockPoller) run(resolvedStartBlock bstream.BlockRef, numberOfBlockToFetch int) (err error) {
-	p.forkDB, resolvedStartBlock, err = initState(resolvedStartBlock, p.stateStorePath, p.ignoreCursor, p.logger)
+	forkDB, resolvedStartBlock, err := p.initState(firstStreamableBlockNum, p.stateStorePath, p.ignoreCursor, p.logger)
 	if err != nil {
 		return fmt.Errorf("unable to initialize cursor: %w", err)
 	}
+	p.forkDB = forkDB
 
+	return p.run(resolvedStartBlock, blockFetchBatchSize)
+}
+
+func (p *BlockPoller) run(resolvedStartBlock bstream.BlockRef, blockFetchBatchSize int) (err error) {
 	currentCursor := &cursor{state: ContinuousSegState, logger: p.logger}
 	blockToFetch := resolvedStartBlock.Num()
 	var hashToFetch *string
@@ -110,7 +102,7 @@ func (p *BlockPoller) run(resolvedStartBlock bstream.BlockRef, numberOfBlockToFe
 		} else {
 
 			for {
-				requestedBlockItem := p.requestBlock(blockToFetch, numberOfBlockToFetch)
+				requestedBlockItem := p.requestBlock(blockToFetch, blockFetchBatchSize)
 				fetchedBlockItem, ok := <-requestedBlockItem
 				if !ok {
 					p.logger.Info("requested block channel was closed, quitting")
@@ -123,7 +115,6 @@ func (p *BlockPoller) run(resolvedStartBlock bstream.BlockRef, numberOfBlockToFe
 
 				p.logger.Info("block was skipped", zap.Uint64("block_num", fetchedBlockItem.blockNumber))
 				blockToFetch++
-
 			}
 		}
 
