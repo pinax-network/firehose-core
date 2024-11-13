@@ -159,7 +159,7 @@ var WellKnownProtocols = WellKnownProtocolList([]WellKnownProtocol{
 	{
 		Name:          "solana-accounts",
 		BlockType:     "sf.solana.type.v1.AccountBlock",
-		BufBuildURL:   "buf.build/streamingfast/solana-accounts",
+		BufBuildURL:   "buf.build/streamingfast/firehose-solana",
 		BytesEncoding: pbfirehose.InfoResponse_BLOCK_ID_ENCODING_BASE58,
 		KnownChains: []*Chain{
 			{
