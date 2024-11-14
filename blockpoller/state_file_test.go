@@ -7,6 +7,7 @@ import (
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/forkable"
+	"github.com/streamingfast/firehose-core/rpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -42,9 +43,9 @@ func TestFireBlockFinalizer_state(t *testing.T) {
 
 	expectedStateFileCnt := `{"Lib":{"id":"101a","num":101},"LastFiredBlock":{"id":"105a","num":105,"previous_ref_id":"104a"},"Blocks":[{"id":"101a","num":101,"previous_ref_id":"100a"},{"id":"102a","num":102,"previous_ref_id":"101a"},{"id":"103a","num":103,"previous_ref_id":"102a"},{"id":"104a","num":104,"previous_ref_id":"103a"},{"id":"105a","num":105,"previous_ref_id":"104a"}]}`
 
-	blockFetcher := newTestBlockFetcher(t, []*TestBlock{tb("60a", "59a", 60)})
+	blockFetcher := newTestBlockFetcher[any](t, []*TestBlock{tb("60a", "59a", 60)})
 
-	poller := &BlockPoller{
+	poller := &BlockPoller[any]{
 		stateStorePath: dirName,
 		forkDB:         fk,
 		logger:         zap.NewNop(),
@@ -73,11 +74,15 @@ func TestFireBlockFinalizer_noSstate(t *testing.T) {
 	require.NoError(t, err)
 	defer os.Remove(dirName)
 
-	blockFetcher := newTestBlockFetcher(t, []*TestBlock{tb("60a", "59a", 60)})
-	poller := &BlockPoller{
+	blockFetcher := newTestBlockFetcher[any](t, []*TestBlock{tb("60a", "59a", 60)})
+	clients := rpc.NewClients[any]()
+	clients.Add(new(any))
+
+	poller := &BlockPoller[any]{
 		stateStorePath: dirName,
 		logger:         zap.NewNop(),
 		blockFetcher:   blockFetcher,
+		clients:        clients,
 	}
 
 	forkDB, startBlock, err := poller.initState(60, dirName, false, zap.NewNop())

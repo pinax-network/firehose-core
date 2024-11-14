@@ -1,11 +1,12 @@
 package blockpoller
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/streamingfast/firehose-core/rpc"
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/forkable"
@@ -33,7 +34,7 @@ type stateFile struct {
 	Blocks         []blockRefWithPrev
 }
 
-func (p *BlockPoller) isStateFileExist(stateStorePath string) bool {
+func (p *BlockPoller[C]) isStateFileExist(stateStorePath string) bool {
 	if stateStorePath == "" {
 		p.logger.Info("No state store path set, skipping cursor check")
 		return false
@@ -66,7 +67,7 @@ func getState(stateStorePath string) (*stateFile, error) {
 	return &sf, nil
 }
 
-func (p *BlockPoller) saveState(blocks []*forkable.Block) error {
+func (p *BlockPoller[C]) saveState(blocks []*forkable.Block) error {
 	p.logger.Debug("saving cursor", zap.String("state_store_path", p.stateStorePath))
 	if p.stateStorePath == "" {
 		return nil
@@ -107,22 +108,34 @@ func (p *BlockPoller) saveState(blocks []*forkable.Block) error {
 	return nil
 }
 
-func (p *BlockPoller) initState(firstStreamableBlockNum uint64, stateStorePath string, ignoreCursor bool, logger *zap.Logger) (*forkable.ForkDB, bstream.BlockRef, error) {
+func (p *BlockPoller[C]) initState(firstStreamableBlockNum uint64, stateStorePath string, ignoreCursor bool, logger *zap.Logger) (*forkable.ForkDB, bstream.BlockRef, error) {
 	forkDB := forkable.NewForkDB(forkable.ForkDBWithLogger(logger))
 
 	if ignoreCursor || !p.isStateFileExist(stateStorePath) {
 		logger.Info("ignoring cursor, fetching first streamable block", zap.Uint64("first_streamable_block", firstStreamableBlockNum))
 
 		for {
-			firstStreamableBlock, skip, err := p.blockFetcher.Fetch(context.Background(), firstStreamableBlockNum)
-			firstStreamableBlockRef := firstStreamableBlock.AsRef()
+			br, err := rpc.WithClients(p.clients, func(client C) (*FetchResponse, error) {
+				firstStreamableBlock, skip, err := p.blockFetcher.Fetch(client, firstStreamableBlockNum)
+				if err != nil {
+					return nil, fmt.Errorf("fetching first streamable block: %w", err)
+				}
+				if skip {
+					return nil, fmt.Errorf("expecting first streamable block %q not to be skipped", firstStreamableBlock.AsRef())
+				}
+				return &FetchResponse{
+					Block: firstStreamableBlock,
+				}, nil
+			})
 			if err != nil {
 				p.logger.Warn("fetching first streamable block", zap.Uint64("first_streamable_block", firstStreamableBlockNum), zap.Error(err))
 				continue
 			}
-			if skip {
-				return nil, nil, fmt.Errorf("expecting first streamable block %q not to be skiped", firstStreamableBlockRef)
+			if br.Skipped {
+				return nil, nil, fmt.Errorf("expecting first streamable block %q not to be skiped", firstStreamableBlockNum)
 			}
+
+			firstStreamableBlockRef := br.Block.AsRef()
 
 			logger.Info("ignoring cursor, will start from...",
 				zap.Stringer("first_streamable_block", firstStreamableBlockRef),

@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/streamingfast/bstream"
-
 	"github.com/streamingfast/bstream/forkable"
 	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 	"github.com/streamingfast/derr"
 	"github.com/streamingfast/dhammer"
 	"github.com/streamingfast/firehose-core/internal/utils"
+	"github.com/streamingfast/firehose-core/rpc"
 	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
 )
@@ -27,7 +27,7 @@ func newBlock(block2 *pbbstream.Block) *block {
 	return &block{block2, false}
 }
 
-type BlockPoller struct {
+type BlockPoller[C any] struct {
 	*shutter.Shutter
 	startBlockNumGate        uint64
 	fetchBlockRetryCount     uint64
@@ -35,9 +35,11 @@ type BlockPoller struct {
 	ignoreCursor             bool
 	forceFinalityAfterBlocks *uint64
 
-	blockFetcher BlockFetcher
+	blockFetcher BlockFetcher[C]
 	blockHandler BlockHandler
-	forkDB       *forkable.ForkDB
+	clients      *rpc.Clients[C]
+
+	forkDB *forkable.ForkDB
 
 	logger *zap.Logger
 
@@ -47,16 +49,18 @@ type BlockPoller struct {
 	optimisticallyPolledBlocksLock sync.Mutex
 }
 
-func New(
-	blockFetcher BlockFetcher,
+func New[C any](
+	blockFetcher BlockFetcher[C],
 	blockHandler BlockHandler,
-	opts ...Option,
-) *BlockPoller {
+	clients *rpc.Clients[C],
+	opts ...Option[C],
+) *BlockPoller[C] {
 
-	b := &BlockPoller{
+	b := &BlockPoller[C]{
 		Shutter:                  shutter.New(),
 		blockFetcher:             blockFetcher,
 		blockHandler:             blockHandler,
+		clients:                  clients,
 		fetchBlockRetryCount:     math.MaxUint64,
 		logger:                   zap.NewNop(),
 		forceFinalityAfterBlocks: utils.GetEnvForceFinalityAfterBlocks(),
@@ -69,7 +73,7 @@ func New(
 	return b
 }
 
-func (p *BlockPoller) Run(ctx context.Context, firstStreamableBlockNum uint64, blockFetchBatchSize int) error {
+func (p *BlockPoller[C]) Run(firstStreamableBlockNum uint64, stopBlock *uint64, blockFetchBatchSize int) error {
 	p.startBlockNumGate = firstStreamableBlockNum
 	p.logger.Info("starting poller",
 		zap.Uint64("first_streamable_block", firstStreamableBlockNum),
@@ -83,14 +87,25 @@ func (p *BlockPoller) Run(ctx context.Context, firstStreamableBlockNum uint64, b
 	}
 	p.forkDB = forkDB
 
-	return p.run(resolvedStartBlock, blockFetchBatchSize)
+	resolveStopBlock := uint64(math.MaxUint64)
+	if stopBlock != nil {
+		resolveStopBlock = *stopBlock
+	}
+
+	return p.run(resolvedStartBlock, resolveStopBlock, blockFetchBatchSize)
 }
 
-func (p *BlockPoller) run(resolvedStartBlock bstream.BlockRef, blockFetchBatchSize int) (err error) {
+func (p *BlockPoller[C]) run(resolvedStartBlock bstream.BlockRef, stopBlock uint64, blockFetchBatchSize int) (err error) {
 	currentCursor := &cursor{state: ContinuousSegState, logger: p.logger}
 	blockToFetch := resolvedStartBlock.Num()
 	var hashToFetch *string
 	for {
+
+		if blockToFetch >= stopBlock {
+			p.logger.Info("stop block reach", zap.Uint64("stop_block", stopBlock))
+			return nil
+		}
+
 		if p.IsTerminating() {
 			p.logger.Info("block poller is terminating")
 		}
@@ -133,7 +148,7 @@ func (p *BlockPoller) run(resolvedStartBlock bstream.BlockRef, blockFetchBatchSi
 	}
 }
 
-func (p *BlockPoller) processBlock(currentState *cursor, block *pbbstream.Block) (uint64, *string, error) {
+func (p *BlockPoller[C]) processBlock(currentState *cursor, block *pbbstream.Block) (uint64, *string, error) {
 	p.logger.Info("processing block", zap.Stringer("block", block.AsRef()), zap.Uint64("lib_num", block.LibNum))
 	if block.Number < p.forkDB.LIBNum() {
 		panic(fmt.Errorf("unexpected error block %d is below the current LIB num %d. There should be no re-org above the current LIB num", block.Number, p.forkDB.LIBNum()))
@@ -189,31 +204,40 @@ type BlockItem struct {
 	skipped     bool
 }
 
-func (p *BlockPoller) loadNextBlocks(requestedBlock uint64, numberOfBlockToFetch int) error {
+func (p *BlockPoller[C]) loadNextBlocks(requestedBlock uint64, numberOfBlockToFetch int) error {
 	p.optimisticallyPolledBlocks = map[uint64]*BlockItem{}
 	p.fetching = true
 
 	nailer := dhammer.NewNailer(10, func(ctx context.Context, blockToFetch uint64) (*BlockItem, error) {
 		var blockItem *BlockItem
 		err := derr.Retry(p.fetchBlockRetryCount, func(ctx context.Context) error {
-			b, skip, err := p.blockFetcher.Fetch(ctx, blockToFetch)
-			if err != nil {
-				return fmt.Errorf("unable to fetch  block %d: %w", blockToFetch, err)
-			}
-			if skip {
-				blockItem = &BlockItem{
-					blockNumber: blockToFetch,
-					block:       nil,
-					skipped:     true,
+
+			bi, err := rpc.WithClients(p.clients, func(client C) (*BlockItem, error) {
+				b, skipped, err := p.blockFetcher.Fetch(client, blockToFetch)
+				if err != nil {
+					return nil, fmt.Errorf("fetching block %d: %w", blockToFetch, err)
 				}
-				return nil
+
+				if skipped {
+					return &BlockItem{
+						blockNumber: blockToFetch,
+						block:       nil,
+						skipped:     true,
+					}, nil
+				}
+
+				return &BlockItem{
+					blockNumber: blockToFetch,
+					block:       b,
+					skipped:     false,
+				}, nil
+			})
+
+			if err != nil {
+				return fmt.Errorf("fetching block %d with retry : %w", blockToFetch, err)
 			}
-			//todo: add block to cache
-			blockItem = &BlockItem{
-				blockNumber: blockToFetch,
-				block:       b,
-				skipped:     false,
-			}
+			blockItem = bi
+
 			return nil
 
 		})
@@ -272,7 +296,7 @@ func (p *BlockPoller) loadNextBlocks(requestedBlock uint64, numberOfBlockToFetch
 	return nil
 }
 
-func (p *BlockPoller) requestBlock(blockNumber uint64, numberOfBlockToFetch int) chan *BlockItem {
+func (p *BlockPoller[C]) requestBlock(blockNumber uint64, numberOfBlockToFetch int) chan *BlockItem {
 	p.logger.Info("requesting block", zap.Uint64("block_num", blockNumber))
 	requestedBlock := make(chan *BlockItem)
 
@@ -314,7 +338,12 @@ func (p *BlockPoller) requestBlock(blockNumber uint64, numberOfBlockToFetch int)
 	return requestedBlock
 }
 
-func (p *BlockPoller) fetchBlockWithHash(blkNum uint64, hash string) (*pbbstream.Block, error) {
+type FetchResponse struct {
+	Block   *pbbstream.Block
+	Skipped bool
+}
+
+func (p *BlockPoller[C]) fetchBlockWithHash(blkNum uint64, hash string) (*pbbstream.Block, error) {
 	p.logger.Info("fetching block with hash", zap.Uint64("block_num", blkNum), zap.String("hash", hash))
 	_ = hash //todo: hash will be used to fetch block from  cache
 
@@ -322,16 +351,25 @@ func (p *BlockPoller) fetchBlockWithHash(blkNum uint64, hash string) (*pbbstream
 
 	var out *pbbstream.Block
 	var skipped bool
+
 	err := derr.Retry(p.fetchBlockRetryCount, func(ctx context.Context) error {
-		//todo: get block from cache
-		var fetchErr error
-		out, skipped, fetchErr = p.blockFetcher.Fetch(ctx, blkNum)
-		if fetchErr != nil {
-			return fmt.Errorf("unable to fetch  block %d: %w", blkNum, fetchErr)
+		br, err := rpc.WithClients(p.clients, func(client C) (br *FetchResponse, err error) {
+			b, skipped, err := p.blockFetcher.Fetch(client, blkNum)
+			if err != nil {
+				return nil, fmt.Errorf("fetching block  block %d: %w", blkNum, err)
+			}
+			return &FetchResponse{
+				Block:   b,
+				Skipped: skipped,
+			}, nil
+		})
+
+		if err != nil {
+			return fmt.Errorf("fetching block with retry %d: %w", blkNum, err)
 		}
-		if skipped {
-			return nil
-		}
+
+		out = br.Block
+		skipped = br.Skipped
 		return nil
 	})
 
@@ -350,7 +388,7 @@ func (p *BlockPoller) fetchBlockWithHash(blkNum uint64, hash string) (*pbbstream
 	return out, nil
 }
 
-func (p *BlockPoller) fireCompleteSegment(blocks []*forkable.Block) error {
+func (p *BlockPoller[C]) fireCompleteSegment(blocks []*forkable.Block) error {
 	for _, blk := range blocks {
 		b := blk.Object.(*block)
 		if _, err := p.fire(b); err != nil {
@@ -360,7 +398,7 @@ func (p *BlockPoller) fireCompleteSegment(blocks []*forkable.Block) error {
 	return nil
 }
 
-func (p *BlockPoller) fire(blk *block) (bool, error) {
+func (p *BlockPoller[C]) fire(blk *block) (bool, error) {
 	if blk.fired {
 		return false, nil
 	}
