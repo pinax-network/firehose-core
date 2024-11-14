@@ -1,6 +1,7 @@
 package blockpoller
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func (b *TestBlockFetcher[C]) IsBlockAvailable(requestedSlot uint64) bool {
 	return true
 }
 
-func (b *TestBlockFetcher[C]) Fetch(c C, blkNum uint64) (*pbbstream.Block, bool, error) {
+func (b *TestBlockFetcher[C]) Fetch(ctx context.Context, c C, blkNum uint64) (*pbbstream.Block, bool, error) {
 	if len(b.blocks) == 0 {
 		assert.Fail(b.t, fmt.Sprintf("should not have fetched block %d", blkNum))
 	}

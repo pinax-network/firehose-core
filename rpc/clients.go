@@ -1,7 +1,9 @@
 package rpc
 
 import (
+	"context"
 	"errors"
+	"time"
 
 	"github.com/hashicorp/go-multierror"
 )
@@ -32,7 +34,7 @@ func (c *Clients[C]) Next() (client C, err error) {
 	return client, nil
 }
 
-func WithClients[C any, V any](clients *Clients[C], f func(C) (v V, err error)) (v V, err error) {
+func WithClients[C any, V any](clients *Clients[C], f func(context.Context, C) (v V, err error)) (v V, err error) {
 	clients.next = 0
 	var errs error
 	for {
@@ -41,7 +43,10 @@ func WithClients[C any, V any](clients *Clients[C], f func(C) (v V, err error)) 
 			errs = multierror.Append(errs, err)
 			return v, errs
 		}
-		v, err := f(client)
+		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(ctx, 1*time.Second) //todo: add to parameters
+		v, err := f(ctx, client)
+		cancel()
 		if err != nil {
 			errs = multierror.Append(errs, err)
 			continue

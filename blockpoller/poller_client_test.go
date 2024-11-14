@@ -1,8 +1,10 @@
 package blockpoller
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 	"github.com/streamingfast/firehose-core/rpc"
@@ -12,6 +14,7 @@ import (
 type TestBlockItem struct {
 	skipped bool
 	err     error
+	delay   time.Duration
 	block   *pbbstream.Block
 }
 type TestBlockClient struct {
@@ -31,21 +34,31 @@ func NewTestBlockClient(blockItems []*TestBlockItem, name string) *TestBlockClie
 	}
 }
 
-func (c *TestBlockClient) GetBlock(blockNumber uint64) (*TestBlockItem, error) {
+func (c *TestBlockClient) GetBlock(ctx context.Context, blockNumber uint64) (*TestBlockItem, error) {
 	fmt.Printf("%s: GetBlock %d\n", c.name, blockNumber)
 	if c.EOB() {
 		fmt.Println("TestBlockClient: EOB", blockNumber)
 		return nil, TestErrCompleteDone
 	}
 	b := c.blockItems[c.currentIndex]
+	fmt.Printf("%s: current index %d, block %d\n", c.name, c.currentIndex, b.block.Number)
 	if b.block.Number != blockNumber {
 		panic(fmt.Sprintf("%s expected requested block %d, got %d", c.name, b.block.Number, blockNumber))
 	}
 
 	c.currentIndex++
+	if b.delay > 0 {
+		fmt.Printf("%s: delaying block %d for %s\n", c.name, blockNumber, b.delay)
+		select {
+		case <-ctx.Done():
+			fmt.Printf("%s: context done, returning %s\n", c.name, ctx.Err())
+			return nil, ctx.Err()
+		case <-time.After(b.delay):
+		}
+	}
 
 	if b.err != nil {
-		fmt.Printf("%s: error producing block %d\n", c.name, blockNumber)
+		fmt.Printf("%s: producing block with error %d\n", c.name, blockNumber)
 		c.errProduceCount++
 		return nil, b.err
 	}
@@ -56,6 +69,7 @@ func (c *TestBlockClient) GetBlock(blockNumber uint64) (*TestBlockItem, error) {
 		return b, nil
 	}
 
+	fmt.Printf("%s: producing block %d\n", c.name, blockNumber)
 	c.blockProduceCount++
 
 	return b, nil
@@ -72,8 +86,8 @@ func (t TestBlockFetcherWithClient) IsBlockAvailable(requestedSlot uint64) bool 
 	return true
 }
 
-func (t TestBlockFetcherWithClient) Fetch(client *TestBlockClient, blkNum uint64) (b *pbbstream.Block, skipped bool, err error) {
-	bi, err := client.GetBlock(blkNum)
+func (t TestBlockFetcherWithClient) Fetch(ctx context.Context, client *TestBlockClient, blkNum uint64) (b *pbbstream.Block, skipped bool, err error) {
+	bi, err := client.GetBlock(ctx, blkNum)
 	if err != nil {
 		return nil, false, err
 	}
@@ -107,6 +121,9 @@ func TestPollerClient(t *testing.T) {
 	blockItems1 = append(blockItems1, &TestBlockItem{block: blk("103a", "101a", 101), skipped: true})
 	blockItems1 = append(blockItems1, &TestBlockItem{block: blk("104a", "102a", 102)})
 
+	blockItems1 = append(blockItems1, &TestBlockItem{block: blk("105a", "104a", 104), delay: 10 * time.Second})
+	blockItems2 = append(blockItems2, &TestBlockItem{block: blk("105a", "104a", 104)})
+
 	c1 := NewTestBlockClient(blockItems1, "c1")
 	c2 := NewTestBlockClient(blockItems2, "c2")
 
@@ -117,7 +134,7 @@ func TestPollerClient(t *testing.T) {
 	handler := &TestNoopBlockFinalizer{}
 	poller := New(fetcher, handler, clients)
 
-	stopBlock := uint64(104)
+	stopBlock := uint64(106)
 	err := poller.Run(99, &stopBlock, 1)
 
 	require.NoError(t, err)
@@ -126,7 +143,7 @@ func TestPollerClient(t *testing.T) {
 	require.Equal(t, 1, c1.skippedCount)
 	require.Equal(t, 2, c1.errProduceCount)
 
-	require.Equal(t, 1, c2.blockProduceCount)
+	require.Equal(t, 2, c2.blockProduceCount)
 	require.Equal(t, 0, c2.skippedCount)
 	require.Equal(t, 1, c2.errProduceCount)
 

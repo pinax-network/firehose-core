@@ -1,16 +1,16 @@
 package blockpoller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/streamingfast/firehose-core/rpc"
-
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/forkable"
 	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
+	"github.com/streamingfast/firehose-core/rpc"
 	"go.uber.org/zap"
 )
 
@@ -115,8 +115,8 @@ func (p *BlockPoller[C]) initState(firstStreamableBlockNum uint64, stateStorePat
 		logger.Info("ignoring cursor, fetching first streamable block", zap.Uint64("first_streamable_block", firstStreamableBlockNum))
 
 		for {
-			br, err := rpc.WithClients(p.clients, func(client C) (*FetchResponse, error) {
-				firstStreamableBlock, skip, err := p.blockFetcher.Fetch(client, firstStreamableBlockNum)
+			br, err := rpc.WithClients(p.clients, func(ctx context.Context, client C) (*FetchResponse, error) {
+				firstStreamableBlock, skip, err := p.blockFetcher.Fetch(ctx, client, firstStreamableBlockNum)
 				if err != nil {
 					return nil, fmt.Errorf("fetching first streamable block: %w", err)
 				}
