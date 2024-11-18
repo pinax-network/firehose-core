@@ -8,6 +8,11 @@ Operators, you should copy/paste content of this content straight to your projec
 
 If you were at `firehose-core` version `1.0.0` and are bumping to `1.1.0`, you should copy the content between those 2 version to your own repository, replacing placeholder value `fire{chain}` with your chain's own binary.
 
+## Unreleased
+
+* `firehose-grpc-listen-addr` flag now accepts comma-separated addresses (allows listening as plaintext and snakeoil-ssl at the same time or on specific ip addresses)
+* removed old `RegisterServiceExtension` implementation (not used anywhere anymore)
+
 ## v1.6.6
 
 * Bump `substreams` and `dmetering` to latest version adding the `outputModuleHash` to metering sender.

@@ -26,7 +26,6 @@ import (
 	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 	"github.com/streamingfast/bstream/transform"
 	"github.com/streamingfast/dauth"
-	dgrpcserver "github.com/streamingfast/dgrpc/server"
 	"github.com/streamingfast/dmetrics"
 	"github.com/streamingfast/dstore"
 	firecore "github.com/streamingfast/firehose-core"
@@ -51,21 +50,14 @@ type Config struct {
 	ServerOptions           []server.Option `json:"-"`
 }
 
-type RegisterServiceExtensionFunc func(server dgrpcserver.Server,
-	mergedBlocksStore dstore.Store,
-	forkedBlocksStore dstore.Store, // this can be nil here
-	forkableHub *hub.ForkableHub,
-	logger *zap.Logger)
-
 type Modules struct {
 	// Required dependencies
-	Authenticator            dauth.Authenticator
-	HeadTimeDriftMetric      *dmetrics.HeadTimeDrift
-	HeadBlockNumberMetric    *dmetrics.HeadBlockNum
-	TransformRegistry        *transform.Registry
-	RegisterServiceExtension RegisterServiceExtensionFunc
-	CheckPendingShutdown     func() bool
-	InfoServer               *info.InfoServer
+	Authenticator         dauth.Authenticator
+	HeadTimeDriftMetric   *dmetrics.HeadTimeDrift
+	HeadBlockNumberMetric *dmetrics.HeadBlockNum
+	TransformRegistry     *transform.Registry
+	CheckPendingShutdown  func() bool
+	InfoServer            *info.InfoServer
 }
 
 type App struct {
@@ -168,15 +160,6 @@ func (a *App) Run() error {
 		firehoseServer.Shutdown(a.config.GRPCShutdownGracePeriod)
 	})
 	firehoseServer.OnTerminated(a.Shutdown)
-
-	if a.modules.RegisterServiceExtension != nil {
-		a.modules.RegisterServiceExtension(
-			firehoseServer.Server,
-			mergedBlocksStore,
-			forkedBlocksStore,
-			forkableHub,
-			a.logger)
-	}
 
 	go func() {
 		if withLive {

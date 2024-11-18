@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mostynb/go-grpc-compression/zstd"
@@ -13,7 +14,6 @@ import (
 	dgrpcserver "github.com/streamingfast/dgrpc/server"
 	"github.com/streamingfast/dgrpc/server/factory"
 	"github.com/streamingfast/dmetering"
-	"github.com/streamingfast/dmetrics"
 	firecore "github.com/streamingfast/firehose-core"
 	"github.com/streamingfast/firehose-core/firehose"
 	"github.com/streamingfast/firehose-core/firehose/info"
@@ -37,13 +37,15 @@ type Server struct {
 	initFunc     func(context.Context, *pbfirehoseV2.Request) context.Context
 	postHookFunc func(context.Context, *pbfirehoseV2.Response)
 
-	dgrpcserver.Server
-	listenAddr       string
-	healthListenAddr string
-	logger           *zap.Logger
-	metrics          dmetrics.Set
+	servers []*wrappedServer
+	logger  *zap.Logger
 
 	rateLimiter rate.Limiter
+}
+
+type wrappedServer struct {
+	dgrpcserver.Server
+	listenAddr string
 }
 
 type Option func(*Server)
@@ -83,48 +85,60 @@ func New(
 	}
 
 	tracerProvider := otel.GetTracerProvider()
-	options := []dgrpcserver.Option{
-		dgrpcserver.WithLogger(logger),
-		dgrpcserver.WithHealthCheck(dgrpcserver.HealthCheckOverGRPC|dgrpcserver.HealthCheckOverHTTP, createHealthCheck(isReady)),
-		dgrpcserver.WithPostUnaryInterceptor(otelgrpc.UnaryServerInterceptor(otelgrpc.WithTracerProvider(tracerProvider))),
-		dgrpcserver.WithPostStreamInterceptor(otelgrpc.StreamServerInterceptor(otelgrpc.WithTracerProvider(tracerProvider))),
-		dgrpcserver.WithGRPCServerOptions(grpc.MaxRecvMsgSize(25 * 1024 * 1024)),
-		dgrpcserver.WithPostUnaryInterceptor(dauthgrpc.UnaryAuthChecker(authenticator, logger)),
-		dgrpcserver.WithPostStreamInterceptor(dauthgrpc.StreamAuthChecker(authenticator, logger)),
-	}
 
-	if serviceDiscoveryURL != nil {
-		options = append(options, dgrpcserver.WithServiceDiscoveryURL(serviceDiscoveryURL))
-	}
+	var servers []*wrappedServer
+	for _, addr := range strings.Split(listenAddr, ",") {
+		options := []dgrpcserver.Option{
+			dgrpcserver.WithLogger(logger),
+			dgrpcserver.WithHealthCheck(dgrpcserver.HealthCheckOverGRPC|dgrpcserver.HealthCheckOverHTTP, createHealthCheck(isReady)),
+			dgrpcserver.WithPostUnaryInterceptor(otelgrpc.UnaryServerInterceptor(otelgrpc.WithTracerProvider(tracerProvider))),
+			dgrpcserver.WithPostStreamInterceptor(otelgrpc.StreamServerInterceptor(otelgrpc.WithTracerProvider(tracerProvider))),
+			dgrpcserver.WithGRPCServerOptions(grpc.MaxRecvMsgSize(25 * 1024 * 1024)),
+			dgrpcserver.WithPostUnaryInterceptor(dauthgrpc.UnaryAuthChecker(authenticator, logger)),
+			dgrpcserver.WithPostStreamInterceptor(dauthgrpc.StreamAuthChecker(authenticator, logger)),
+		}
 
-	if strings.Contains(listenAddr, "*") {
-		options = append(options, dgrpcserver.WithInsecureServer())
-	} else {
-		options = append(options, dgrpcserver.WithPlainTextServer())
-	}
+		if serviceDiscoveryURL != nil {
+			options = append(options, dgrpcserver.WithServiceDiscoveryURL(serviceDiscoveryURL))
+		}
 
-	grpcServer := factory.ServerFromOptions(options...)
+		if strings.Contains(addr, "*") {
+			options = append(options, dgrpcserver.WithInsecureServer())
+			addr = strings.ReplaceAll(addr, "*", "")
+		} else {
+			options = append(options, dgrpcserver.WithPlainTextServer())
+		}
+
+		srv := factory.ServerFromOptions(options...)
+
+		servers = append(servers, &wrappedServer{
+			Server:     srv,
+			listenAddr: addr,
+		})
+
+	}
 
 	s := &Server{
-		Server:            grpcServer,
+		servers:           servers,
 		transformRegistry: transformRegistry,
 		blockGetter:       blockGetter,
 		streamFactory:     streamFactory,
-		listenAddr:        strings.ReplaceAll(listenAddr, "*", ""),
 		initFunc:          initFunc,
 		postHookFunc:      postHookFunc,
 		logger:            logger,
 	}
 
 	logger.Info("registering grpc services")
-	grpcServer.RegisterService(func(gs grpc.ServiceRegistrar) {
-		if blockGetter != nil {
-			pbfirehoseV2.RegisterFetchServer(gs, s)
-		}
-		pbfirehoseV2.RegisterEndpointInfoServer(gs, infoServer)
-		pbfirehoseV2.RegisterStreamServer(gs, s)
-		pbfirehoseV1.RegisterStreamServer(gs, NewFirehoseProxyV1ToV2(s)) // compatibility with firehose
-	})
+	for _, srv := range servers {
+		srv.RegisterService(func(gs grpc.ServiceRegistrar) {
+			if blockGetter != nil {
+				pbfirehoseV2.RegisterFetchServer(gs, s)
+			}
+			pbfirehoseV2.RegisterEndpointInfoServer(gs, infoServer)
+			pbfirehoseV2.RegisterStreamServer(gs, s)
+			pbfirehoseV1.RegisterStreamServer(gs, NewFirehoseProxyV1ToV2(s)) // compatibility with firehose
+		})
+	}
 
 	for _, opt := range opts {
 		opt(s)
@@ -133,8 +147,28 @@ func New(
 	return s
 }
 
+func (s *Server) OnTerminated(f func(error)) {
+	for _, server := range s.servers {
+		server.OnTerminated(f)
+	}
+}
+
+func (s *Server) Shutdown(timeout time.Duration) {
+	for _, server := range s.servers {
+		server.Shutdown(timeout)
+	}
+}
+
 func (s *Server) Launch() {
-	s.Server.Launch(s.listenAddr)
+	wg := sync.WaitGroup{}
+	for _, server := range s.servers {
+		wg.Add(1)
+		go func() {
+			server.Launch(server.listenAddr)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
 }
 
 func createHealthCheck(isReady func(ctx context.Context) bool) dgrpcserver.HealthCheck {
