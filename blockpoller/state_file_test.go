@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/forkable"
@@ -75,7 +76,7 @@ func TestFireBlockFinalizer_noSstate(t *testing.T) {
 	defer os.Remove(dirName)
 
 	blockFetcher := newTestBlockFetcher[any](t, []*TestBlock{tb("60a", "59a", 60)})
-	clients := rpc.NewClients[any]()
+	clients := rpc.NewClients[any](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[any]())
 	clients.Add(new(any))
 
 	poller := &BlockPoller[any]{

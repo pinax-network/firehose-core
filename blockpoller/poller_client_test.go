@@ -98,7 +98,7 @@ func (t TestBlockFetcherWithClient) Fetch(ctx context.Context, client *TestBlock
 }
 
 func TestPollerClient(t *testing.T) {
-	clients := rpc.NewClients[*TestBlockClient]()
+	clients := rpc.NewClients[*TestBlockClient](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[*TestBlockClient]())
 	var blockItems1 []*TestBlockItem
 	var blockItems2 []*TestBlockItem
 

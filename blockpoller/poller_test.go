@@ -167,7 +167,7 @@ func TestForkHandler_run(t *testing.T) {
 			blockFetcher := newTestBlockFetcher[any](t, tt.blocks)
 			blockFinalizer := newTestBlockFinalizer(t, tt.expectFireBlock)
 
-			clients := rpc.NewClients[any](1 * time.Second)
+			clients := rpc.NewClients[any](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[any]())
 			clients.Add(new(any))
 
 			poller := New(blockFetcher, blockFinalizer, clients)
