@@ -165,6 +165,9 @@ func (s *Server) Launch() {
 		wg.Add(1)
 		go func() {
 			server.Launch(server.listenAddr)
+			for _, srv := range s.servers {
+				srv.Shutdown(0) // immediately shutdown all other servers when one terminates, in case a single one failed
+			}
 			wg.Done()
 		}()
 	}
