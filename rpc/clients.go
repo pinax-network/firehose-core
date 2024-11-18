@@ -11,13 +11,15 @@ import (
 var ErrorNoMoreClient = errors.New("no more clients")
 
 type Clients[C any] struct {
-	clients []C
-	next    int
+	clients               []C
+	next                  int
+	maxBlockFetchDuration time.Duration
 }
 
-func NewClients[C any]() *Clients[C] {
+func NewClients[C any](maxBlockFetchDuration time.Duration) *Clients[C] {
 	return &Clients[C]{
-		next: 0,
+		next:                  0,
+		maxBlockFetchDuration: maxBlockFetchDuration,
 	}
 }
 
@@ -44,7 +46,7 @@ func WithClients[C any, V any](clients *Clients[C], f func(context.Context, C) (
 			return v, errs
 		}
 		ctx := context.Background()
-		ctx, cancel := context.WithTimeout(ctx, 1*time.Second) //todo: add to parameters
+		ctx, cancel := context.WithTimeout(ctx, clients.maxBlockFetchDuration)
 		v, err := f(ctx, client)
 		cancel()
 		if err != nil {

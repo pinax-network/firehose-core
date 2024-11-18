@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
-
-	"github.com/streamingfast/firehose-core/rpc"
+	"time"
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/forkable"
 	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
+	"github.com/streamingfast/firehose-core/rpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -167,7 +167,7 @@ func TestForkHandler_run(t *testing.T) {
 			blockFetcher := newTestBlockFetcher[any](t, tt.blocks)
 			blockFinalizer := newTestBlockFinalizer(t, tt.expectFireBlock)
 
-			clients := rpc.NewClients[any]()
+			clients := rpc.NewClients[any](1 * time.Second)
 			clients.Add(new(any))
 
 			poller := New(blockFetcher, blockFinalizer, clients)
