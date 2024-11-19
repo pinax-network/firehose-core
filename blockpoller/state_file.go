@@ -40,11 +40,10 @@ func (p *BlockPoller) isStateFileExist(stateStorePath string) bool {
 	}
 	fp := filepath.Join(stateStorePath, "cursor.json")
 	_, err := os.Stat(fp)
-	exist := err == nil || os.IsExist(err)
+	exist := err == nil
 	p.logger.Info("cursor file check",
 		zap.String("state_store_path", stateStorePath),
 		zap.Bool("exist", exist),
-		zap.Error(err),
 	)
 	return exist
 }
