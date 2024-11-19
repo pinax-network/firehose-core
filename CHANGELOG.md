@@ -12,6 +12,7 @@ If you were at `firehose-core` version `1.0.0` and are bumping to `1.1.0`, you s
 
 * `firehose-grpc-listen-addr` flag now accepts comma-separated addresses (allows listening as plaintext and snakeoil-ssl at the same time or on specific ip addresses)
 * removed old `RegisterServiceExtension` implementation (not used anywhere anymore)
+* rpc-poller lib: fix fetching the first block on an endpoint (was not following the cursor, failing unnecessarily on non-archive nodes)
 
 ## v1.6.6
 
