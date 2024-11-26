@@ -28,11 +28,11 @@ func NewClients[C any](maxBlockFetchDuration time.Duration, rollingStrategy Roll
 	}
 }
 
-func (c *Clients[C]) StartSorting(ctx context.Context, direction SortDirection, every time.Duration) {
+func (c *Clients[C]) StartSorting(ctx context.Context, direction SortDirection, sortValueFetcher SortValueFetcher[C], every time.Duration) {
 	go func() {
 		for {
 			c.logger.Info("sorting clients")
-			err := Sort(ctx, c, direction)
+			err := Sort(ctx, c, sortValueFetcher, direction)
 			if err != nil {
 				c.logger.Warn("sorting", zap.Error(err))
 			}

@@ -5,21 +5,32 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/stretchr/testify/require"
 )
+
+type testSortFetcher struct {
+}
+
+func (t testSortFetcher) fetchSortValue(ctx context.Context, client *rollClient) (sortValue uint64, err error) {
+	return client.sortValue, nil
+}
 
 func TestClientsSort(t *testing.T) {
 	rollingStrategy := NewStickyRollingStrategy[*rollClient]()
 	rollingStrategy.reset()
 
-	clients := NewClients(2*time.Second, rollingStrategy)
+	clients := NewClients(2*time.Second, rollingStrategy, zap.NewNop())
 	clients.Add(&rollClient{name: "c.1", sortValue: 100})
 	clients.Add(&rollClient{name: "c.2", sortValue: 101})
 	clients.Add(&rollClient{name: "c.3", sortValue: 102})
 	clients.Add(&rollClient{name: "c.a", sortValue: 103})
 	clients.Add(&rollClient{name: "c.b", sortValue: 104})
 
-	err := Sort(context.Background(), clients, SortDirectionDescending)
+	fetcher := testSortFetcher{}
+
+	err := Sort(context.Background(), clients, fetcher, SortDirectionDescending)
 	require.NoError(t, err)
 
 	var names []string
@@ -29,7 +40,7 @@ func TestClientsSort(t *testing.T) {
 
 	require.Equal(t, []string{"c.b", "c.a", "c.3", "c.2", "c.1"}, names)
 
-	err = Sort(context.Background(), clients, SortDirectionAscending)
+	err = Sort(context.Background(), clients, fetcher, SortDirectionAscending)
 	require.NoError(t, err)
 
 	names = []string{}

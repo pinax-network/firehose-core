@@ -5,8 +5,8 @@ import (
 	"sort"
 )
 
-type SortValueFetcher interface {
-	fetchSortValue(ctx context.Context) (sortValue uint64, err error)
+type SortValueFetcher[C any] interface {
+	fetchSortValue(ctx context.Context, client C) (sortValue uint64, err error)
 }
 
 type SortDirection int
@@ -16,7 +16,7 @@ const (
 	SortDirectionDescending
 )
 
-func Sort[C any](ctx context.Context, clients *Clients[C], direction SortDirection) error {
+func Sort[C any](ctx context.Context, clients *Clients[C], sortValueFetch SortValueFetcher[C], direction SortDirection) error {
 	type sortable struct {
 		clientIndex int
 		sortValue   uint64
@@ -25,11 +25,9 @@ func Sort[C any](ctx context.Context, clients *Clients[C], direction SortDirecti
 	for i, client := range clients.clients {
 		var v uint64
 		var err error
-		if s, ok := any(client).(SortValueFetcher); ok {
-			v, err = s.fetchSortValue(ctx)
-			if err != nil {
-				//do nothing
-			}
+		v, err = sortValueFetch.fetchSortValue(ctx, client)
+		if err != nil {
+			//do nothing
 		}
 		sortableValues = append(sortableValues, sortable{i, v})
 	}
