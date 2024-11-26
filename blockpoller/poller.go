@@ -73,8 +73,6 @@ func New[C any](
 	return b
 }
 
-var MaxStopBlock *uint64 = nil
-
 func (p *BlockPoller[C]) Run(firstStreamableBlockNum uint64, stopBlock *uint64, blockFetchBatchSize int) error {
 	p.startBlockNumGate = firstStreamableBlockNum
 	p.logger.Info("starting poller",
