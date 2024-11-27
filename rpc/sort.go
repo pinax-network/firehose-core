@@ -6,7 +6,7 @@ import (
 )
 
 type SortValueFetcher[C any] interface {
-	fetchSortValue(ctx context.Context, client C) (sortValue uint64, err error)
+	FetchSortValue(ctx context.Context, client C) (sortValue uint64, err error)
 }
 
 type SortDirection int
@@ -25,7 +25,7 @@ func Sort[C any](ctx context.Context, clients *Clients[C], sortValueFetch SortVa
 	for i, client := range clients.clients {
 		var v uint64
 		var err error
-		v, err = sortValueFetch.fetchSortValue(ctx, client)
+		v, err = sortValueFetch.FetchSortValue(ctx, client)
 		if err != nil {
 			//do nothing
 		}
