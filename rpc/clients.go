@@ -36,6 +36,16 @@ func (c *Clients[C]) StartSorting(ctx context.Context, direction SortDirection, 
 			if err != nil {
 				c.logger.Warn("sorting", zap.Error(err))
 			}
+
+			switch s := c.rollingStrategy.(type) {
+			case *StickyRollingStrategy[C]:
+				s.fistCallToNewClient = true
+				s.usedClientCount = 0
+				s.nextClientIndex = 0
+			case *RollingStrategyAlwaysUseFirst[C]:
+				s.nextIndex = 0
+			}
+
 			time.Sleep(every)
 		}
 	}()
