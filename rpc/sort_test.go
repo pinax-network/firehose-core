@@ -13,7 +13,7 @@ import (
 type testSortFetcher struct {
 }
 
-func (t testSortFetcher) fetchSortValue(ctx context.Context, client *rollClient) (sortValue uint64, err error) {
+func (t *testSortFetcher) fetchSortValue(ctx context.Context, client *rollClient) (sortValue uint64, err error) {
 	return client.sortValue, nil
 }
 
@@ -28,7 +28,7 @@ func TestClientsSort(t *testing.T) {
 	clients.Add(&rollClient{name: "c.a", sortValue: 103})
 	clients.Add(&rollClient{name: "c.b", sortValue: 104})
 
-	fetcher := testSortFetcher{}
+	fetcher := &testSortFetcher{}
 
 	err := Sort(context.Background(), clients, fetcher, SortDirectionDescending)
 	require.NoError(t, err)
