@@ -131,8 +131,8 @@ var WellKnownProtocols = WellKnownProtocolList([]WellKnownProtocol{
 			{
 				Name:               "near-mainnet",
 				Aliases:            []string{"near"},
-				GenesisBlockID:     "a7110b9052e1be68f7fa8bb4065bf54e731205801878e708db7464ec4b9b8014",
-				GenesisBlockNumber: 9820214,
+				GenesisBlockID:     "c6fdf91c8e82f8f917cc1975e9de1c64be11899e321dfdf5febcfbb7313f1486",
+				GenesisBlockNumber: 9820210,
 			},
 			{
 				Name:               "near-testnet",
