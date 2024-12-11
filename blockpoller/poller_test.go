@@ -1,29 +1,33 @@
 package blockpoller
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/streamingfast/bstream"
 	"github.com/streamingfast/bstream/forkable"
 	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
+	"github.com/streamingfast/firehose-core/rpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestForkHandler_run(t *testing.T) {
 	tests := []struct {
 		name                 string
 		firstStreamableBlock bstream.BlockRef
+		stopAtBlock          uint64
 		blocks               []*TestBlock
 		expectFireBlock      []*pbbstream.Block
 	}{
 		{
 			name:                 "start block 0",
 			firstStreamableBlock: blk("0a", "", 0).AsRef(),
+			stopAtBlock:          uint64(3),
 			blocks: []*TestBlock{
 				tb("0a", "", 0), //init the state fetch
 				tb("0a", "", 0),
@@ -39,6 +43,7 @@ func TestForkHandler_run(t *testing.T) {
 		{
 			name:                 "Fork 1",
 			firstStreamableBlock: blk("100a", "99a", 100).AsRef(),
+			stopAtBlock:          uint64(108),
 			blocks: []*TestBlock{
 				tb("100a", "99a", 100), //init the state fetch
 				tb("100a", "99a", 100),
@@ -53,6 +58,7 @@ func TestForkHandler_run(t *testing.T) {
 				tb("102b", "101a", 100),
 				tb("106a", "105a", 100),
 				tb("105a", "104a", 100),
+				tb("107a", "106a", 100),
 			},
 			expectFireBlock: []*pbbstream.Block{
 				blk("100a", "99a", 100),
@@ -71,6 +77,7 @@ func TestForkHandler_run(t *testing.T) {
 		{
 			name:                 "Fork 2",
 			firstStreamableBlock: blk("100a", "99a", 100).AsRef(),
+			stopAtBlock:          uint64(106),
 			blocks: []*TestBlock{
 				tb("100a", "99a", 100), //init the state fetch
 				tb("100a", "99a", 100),
@@ -99,6 +106,7 @@ func TestForkHandler_run(t *testing.T) {
 		{
 			name:                 "with lib advancing",
 			firstStreamableBlock: blk("100a", "99a", 100).AsRef(),
+			stopAtBlock:          uint64(106),
 			blocks: []*TestBlock{
 				tb("100a", "99a", 100), //init the state fetch
 				tb("100a", "99a", 100),
@@ -127,6 +135,7 @@ func TestForkHandler_run(t *testing.T) {
 		{
 			name:                 "with skipping blocks",
 			firstStreamableBlock: blk("100a", "99a", 100).AsRef(),
+			stopAtBlock:          uint64(106),
 			blocks: []*TestBlock{
 				tb("100a", "99a", 100), //init the state fetch
 				tb("100a", "99a", 100),
@@ -156,14 +165,17 @@ func TestForkHandler_run(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			blockFetcher := newTestBlockFetcher(t, tt.blocks)
+			blockFetcher := newTestBlockFetcher[any](t, tt.blocks)
 			blockFinalizer := newTestBlockFinalizer(t, tt.expectFireBlock)
 
-			poller := New(blockFetcher, blockFinalizer)
+			clients := rpc.NewClients[any](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[any](), zap.NewNop())
+			clients.Add(new(any))
+
+			poller := New(blockFetcher, blockFinalizer, clients)
 			poller.fetchBlockRetryCount = 0
 			poller.forkDB = forkable.NewForkDB()
 
-			err := poller.Run(context.Background(), tt.firstStreamableBlock.Num(), 1)
+			err := poller.Run(tt.firstStreamableBlock.Num(), &tt.stopAtBlock, 1)
 			if !errors.Is(err, TestErrCompleteDone) {
 				require.NoError(t, err)
 			}
@@ -210,7 +222,7 @@ func TestForkHandler_fire(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			poller := &BlockPoller{startBlockNumGate: test.startBlockNum, blockHandler: &TestNoopBlockFinalizer{}}
+			poller := &BlockPoller[any]{startBlockNumGate: test.startBlockNum, blockHandler: &TestNoopBlockFinalizer{}}
 			ok, err := poller.fire(test.block)
 			require.NoError(t, err)
 			assert.Equal(t, test.expect, ok)

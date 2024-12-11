@@ -2,30 +2,30 @@ package blockpoller
 
 import "go.uber.org/zap"
 
-type Option func(*BlockPoller)
+type Option[C any] func(*BlockPoller[C])
 
-func WithBlockFetchRetryCount(v uint64) Option {
-	return func(p *BlockPoller) {
+func WithBlockFetchRetryCount[C any](v uint64) Option[C] {
+	return func(p *BlockPoller[C]) {
 		p.fetchBlockRetryCount = v
 	}
 }
 
-func WithStoringState(stateStorePath string) Option {
-	return func(p *BlockPoller) {
+func WithStoringState[C any](stateStorePath string) Option[C] {
+	return func(p *BlockPoller[C]) {
 		p.stateStorePath = stateStorePath
 	}
 }
 
 // IgnoreCursor ensures the poller will ignore the cursor and start from the startBlockNum
 // the cursor will still be saved as the poller progresses
-func IgnoreCursor() Option {
-	return func(p *BlockPoller) {
+func IgnoreCursor[C any]() Option[C] {
+	return func(p *BlockPoller[C]) {
 		p.ignoreCursor = true
 	}
 }
 
-func WithLogger(logger *zap.Logger) Option {
-	return func(p *BlockPoller) {
+func WithLogger[C any](logger *zap.Logger) Option[C] {
+	return func(p *BlockPoller[C]) {
 		p.logger = logger
 	}
 }

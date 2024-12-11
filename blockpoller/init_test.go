@@ -27,31 +27,31 @@ type TestBlock struct {
 	send   *pbbstream.Block
 }
 
-var _ BlockFetcher = &TestBlockFetcher{}
+var _ BlockFetcher[any] = &TestBlockFetcher[any]{}
 
-type TestBlockFetcher struct {
+type TestBlockFetcher[C any] struct {
 	t         *testing.T
 	blocks    []*TestBlock
 	idx       uint64
 	completed bool
 }
 
-func newTestBlockFetcher(t *testing.T, blocks []*TestBlock) *TestBlockFetcher {
-	return &TestBlockFetcher{
+func newTestBlockFetcher[C any](t *testing.T, blocks []*TestBlock) *TestBlockFetcher[C] {
+	return &TestBlockFetcher[C]{
 		t:      t,
 		blocks: blocks,
 	}
 }
 
-func (b *TestBlockFetcher) PollingInterval() time.Duration {
+func (b *TestBlockFetcher[C]) PollingInterval() time.Duration {
 	return 0
 }
 
-func (b *TestBlockFetcher) IsBlockAvailable(requestedSlot uint64) bool {
+func (b *TestBlockFetcher[C]) IsBlockAvailable(requestedSlot uint64) bool {
 	return true
 }
 
-func (b *TestBlockFetcher) Fetch(_ context.Context, blkNum uint64) (*pbbstream.Block, bool, error) {
+func (b *TestBlockFetcher[C]) Fetch(ctx context.Context, c C, blkNum uint64) (*pbbstream.Block, bool, error) {
 	if len(b.blocks) == 0 {
 		assert.Fail(b.t, fmt.Sprintf("should not have fetched block %d", blkNum))
 	}
@@ -69,7 +69,7 @@ func (b *TestBlockFetcher) Fetch(_ context.Context, blkNum uint64) (*pbbstream.B
 	return blkToSend, false, nil
 }
 
-func (b *TestBlockFetcher) check(t *testing.T) {
+func (b *TestBlockFetcher[C]) check(t *testing.T) {
 	t.Helper()
 	require.Equal(b.t, uint64(len(b.blocks)), b.idx, "we should have fetched all %d blocks, only fired %d blocks", len(b.blocks), b.idx)
 }
