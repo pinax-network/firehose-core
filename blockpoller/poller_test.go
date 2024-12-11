@@ -13,6 +13,7 @@ import (
 	"github.com/streamingfast/firehose-core/rpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestForkHandler_run(t *testing.T) {
@@ -167,7 +168,7 @@ func TestForkHandler_run(t *testing.T) {
 			blockFetcher := newTestBlockFetcher[any](t, tt.blocks)
 			blockFinalizer := newTestBlockFinalizer(t, tt.expectFireBlock)
 
-			clients := rpc.NewClients[any](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[any]())
+			clients := rpc.NewClients[any](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[any](), zap.NewNop())
 			clients.Add(new(any))
 
 			poller := New(blockFetcher, blockFinalizer, clients)

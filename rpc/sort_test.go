@@ -13,7 +13,7 @@ import (
 type testSortFetcher struct {
 }
 
-func (t *testSortFetcher) fetchSortValue(ctx context.Context, client *rollClient) (sortValue uint64, err error) {
+func (t *testSortFetcher) FetchSortValue(ctx context.Context, client *rollClient) (sortValue uint64, err error) {
 	return client.sortValue, nil
 }
 

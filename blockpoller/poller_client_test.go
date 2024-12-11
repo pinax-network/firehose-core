@@ -9,6 +9,7 @@ import (
 	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
 	"github.com/streamingfast/firehose-core/rpc"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 type TestBlockItem struct {
@@ -98,7 +99,7 @@ func (t TestBlockFetcherWithClient) Fetch(ctx context.Context, client *TestBlock
 }
 
 func TestPollerClient(t *testing.T) {
-	clients := rpc.NewClients[*TestBlockClient](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[*TestBlockClient]())
+	clients := rpc.NewClients[*TestBlockClient](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[*TestBlockClient](), zap.NewNop())
 	var blockItems1 []*TestBlockItem
 	var blockItems2 []*TestBlockItem
 

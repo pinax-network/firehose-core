@@ -21,8 +21,6 @@ func (s *StickyRollingStrategy[C]) reset() {
 	s.usedClientCount = 0
 }
 func (s *StickyRollingStrategy[C]) next(clients *Clients[C]) (client C, err error) {
-	clients.lock.Lock()
-	defer clients.lock.Unlock()
 
 	if len(clients.clients) == s.usedClientCount {
 		return client, ErrorNoMoreClient
@@ -61,9 +59,6 @@ func (s *StickyRollingStrategy[C]) next(clients *Clients[C]) (client C, err erro
 }
 
 func (s *StickyRollingStrategy[C]) prevIndex(clients *Clients[C]) int {
-	clients.lock.Lock()
-	defer clients.lock.Unlock()
-
 	if s.nextClientIndex == 0 {
 		return len(clients.clients) - 1
 	}
@@ -83,8 +78,6 @@ func (s *RollingStrategyAlwaysUseFirst[C]) reset() {
 }
 
 func (s *RollingStrategyAlwaysUseFirst[C]) next(c *Clients[C]) (client C, err error) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
 
 	if len(c.clients) <= s.nextIndex {
 		return client, ErrorNoMoreClient

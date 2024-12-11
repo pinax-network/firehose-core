@@ -76,7 +76,7 @@ func TestFireBlockFinalizer_noSstate(t *testing.T) {
 	defer os.Remove(dirName)
 
 	blockFetcher := newTestBlockFetcher[any](t, []*TestBlock{tb("60a", "59a", 60)})
-	clients := rpc.NewClients[any](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[any]())
+	clients := rpc.NewClients[any](1*time.Second, rpc.NewRollingStrategyAlwaysUseFirst[any](), zap.NewNop())
 	clients.Add(new(any))
 
 	poller := &BlockPoller[any]{
