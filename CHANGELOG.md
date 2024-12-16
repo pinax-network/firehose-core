@@ -8,6 +8,15 @@ Operators, you should copy/paste content of this content straight to your projec
 
 If you were at `firehose-core` version `1.0.0` and are bumping to `1.1.0`, you should copy the content between those 2 version to your own repository, replacing placeholder value `fire{chain}` with your chain's own binary.
 
+## v1.6.8
+
+* Substreams: add `--substreams-tier1-enforce-compression` to reject connections from clients that do not support GZIP compression
+* Substreams performance: reduced the number of `mallocs` (patching some third-party libraries)
+* Substreams performance: removed heavy tracing (that wasn't exposed to the client)
+* Fixed `reader-node-line-buffer-size` flag that was not being respected in `reader-node-stdin` app
+* Well-known chains: change genesis block for near-mainnet from 9820214 to 9820210
+* BlockPoller library: reworked logic to support more flexible balancing strategy
+
 ## v1.6.7
 
 * `firehose-grpc-listen-addr` and `substreams-tier1-grpc-listen-addr` flags now accepts comma-separated addresses (allows listening as plaintext and snakeoil-ssl at the same time or on specific ip addresses)
