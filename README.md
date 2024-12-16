@@ -1,12 +1,13 @@
-## Firehose multi-chain executor
+## Firehose Core - Multi-chain Executor
 
 This repository contains all the base components of [Firehose](https://firehose.streamingfast.io/) and run the software for multiple block chains (Bitcoin, Solana, ...) or be used as a library (firehose-ethereum, firehose-antelope)
 
-## Compiling
+## Installation
 
-* `go install -v ./cmd/firecore`
-
-Or download the latest Release from https://github.com/streamingfast/firehose-core/releases/
+- Using Homebrew (MacOS & Linux): `brew install tap/streamingfast/firehose-core`
+- Using Docker: `alias firecore='docker run --rm -it -e="SF_API_TOKEN=${SF_API_TOKEN}" ghcr.io/streamingfast/firehose-core'`
+- Using pre-built binary at: https://github.com/streamingfast/firehose-core/releases?q=&expanded=true
+- Compile from source: `go install ./cmd/firehose`
 
 ## Running directly
 
