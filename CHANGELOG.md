@@ -10,6 +10,9 @@ If you were at `firehose-core` version `1.0.0` and are bumping to `1.1.0`, you s
 
 ## v1.6.8
 
+> [!NOTE]  
+> This release will reject connections from clients that don't support GZIP compression. Use `--substreams-tier1-enforce-compression=false` to keep previous behavior, then check the logs for `incoming Substreams Blocks request` logs with the value `compressed: false` to track users who are not using compressed HTTP connections.
+
 * Substreams: add `--substreams-tier1-enforce-compression` to reject connections from clients that do not support GZIP compression
 * Substreams performance: reduced the number of `mallocs` (patching some third-party libraries)
 * Substreams performance: removed heavy tracing (that wasn't exposed to the client)
