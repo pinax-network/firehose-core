@@ -30,7 +30,7 @@ import (
 	"github.com/streamingfast/dstore"
 	firecore "github.com/streamingfast/firehose-core"
 	"github.com/streamingfast/firehose-core/cmd/tools/check"
-	"github.com/streamingfast/firehose-core/json"
+	fcjson "github.com/streamingfast/firehose-core/json"
 	fcproto "github.com/streamingfast/firehose-core/proto"
 	"github.com/streamingfast/firehose-core/types"
 	"go.uber.org/multierr"
@@ -73,9 +73,7 @@ func NewToolsCompareBlocksCmd[B firecore.Block](chain *firecore.Chain[B]) *cobra
 
 	flags := cmd.PersistentFlags()
 	flags.Bool("diff", false, "When activated, difference is displayed for each block with a difference")
-	flags.String("bytes-encoding", "hex", "Encoding for bytes fields, either 'hex' or 'base58'")
 	flags.Bool("include-unknown-fields", false, "When activated, the 'unknown fields' in the protobuf message will also be compared. These would not generate any difference when unmarshalled with the current protobuf definition.")
-	flags.StringSlice("proto-paths", []string{""}, "Paths to proto files to use for dynamic decoding of blocks")
 
 	return cmd
 }
@@ -363,16 +361,16 @@ func Compare(reference proto.Message, current proto.Message, includeUnknownField
 
 	//todo: check if there is a equals that do not compare unknown fields
 	if !proto.Equal(reference, current) {
-		var opts []json.MarshallerOption
+		var opts []fcjson.MarshallerOption
 		if !includeUnknownFields {
-			opts = append(opts, json.WithoutUnknownFields())
+			opts = append(opts, fcjson.WithoutUnknownFields())
 		}
 
-		if bytesEncoding == "base58" {
-			opts = append(opts, json.WithBytesEncoderFunc(json.ToBase58))
+		if bytesEncoding != "" {
+			opts = append(opts, fcjson.WithBytesEncoding(bytesEncoding))
 		}
 
-		encoder := json.NewMarshaller(registry, opts...)
+		encoder := fcjson.NewMarshaller(registry, opts...)
 
 		referenceAsJSON, err := encoder.MarshalToString(reference)
 		cli.NoError(err, "marshal JSON reference")
