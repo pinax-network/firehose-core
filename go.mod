@@ -226,3 +226,5 @@ replace (
 	github.com/jhump/protoreflect => github.com/streamingfast/protoreflect v0.0.0-20231205191344-4b629d20ce8d
 	github.com/tetratelabs/wazero => github.com/streamingfast/wazero v0.0.0-20241202185309-91287c3640ed
 )
+
+replace github.com/streamingfast/dstore => github.com/fschoell/dstore v0.0.0-20250519094639-636fb72f9813
