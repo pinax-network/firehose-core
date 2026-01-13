@@ -15,9 +15,7 @@
 package node_reader_stdin
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 
 	"github.com/streamingfast/bstream/blockstream"
 	pbbstream "github.com/streamingfast/bstream/pb/sf/bstream/v1"
@@ -26,7 +24,6 @@ import (
 	dgrpcserver "github.com/streamingfast/dgrpc/server"
 	dgrpcfactory "github.com/streamingfast/dgrpc/server/factory"
 	nodeManager "github.com/streamingfast/firehose-core/node-manager"
-	logplugin "github.com/streamingfast/firehose-core/node-manager/log_plugin"
 	"github.com/streamingfast/firehose-core/node-manager/mindreader"
 	"github.com/streamingfast/logging"
 	pbheadinfo "github.com/streamingfast/pbgo/sf/headinfo/v1"
@@ -155,41 +152,6 @@ func (a *App) Run() error {
 	a.zlogger.Debug("running reader log plugin")
 	mindreaderLogPlugin.Launch()
 	go a.modules.MetricsAndReadinessManager.Launch()
-
-	var logPlugin *logplugin.ToZapLogPlugin
-	if a.Config.LogToZap {
-		logPlugin = logplugin.NewToZapLogPlugin(a.Config.DebugDeepMind, a.zlogger)
-	}
-
-	maxLineLength := a.Config.MaxLineLengthInBytes
-	if maxLineLength == 0 {
-		maxLineLength = 50 * 1024 * 1024
-	}
-
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, int(maxLineLength)), int(maxLineLength))
-
-	go func() {
-		a.zlogger.Info("starting stdin consumption loop")
-		for scanner.Scan() {
-			line := scanner.Text()
-
-			if logPlugin != nil {
-				logPlugin.LogLine(line)
-			}
-
-			mindreaderLogPlugin.LogLine(line)
-		}
-
-		if err := scanner.Err(); err != nil {
-			a.zlogger.Error("got an error from while trying to read a line", zap.Error(err))
-			mindreaderLogPlugin.Shutdown(err)
-			return
-		}
-
-		a.zlogger.Info("done reading from stdin")
-		mindreaderLogPlugin.Shutdown(nil)
-	}()
 
 	return nil
 }
