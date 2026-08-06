@@ -79,13 +79,14 @@ func NewRelayer(
 	options := []forkable.Option{
 		forkable.WithFilters(bstream.StepNew | bstream.StepPartial),
 		forkable.WithMetrics(metrics.HeadBlockNumber, metrics.HeadBlockTimeDrift, metrics.HeadBlockRelativeDrift),
+		forkable.WithFinalizedBlockNumMetric(metrics.FinalizedBlockNumber),
 	}
 
 	forkableHub := hub.NewForkableHubWithOptions(
 		r.liveSourceFactory,
 		10,
 		oneBlocksStore,
-		[]hub.Option{hub.WithMaxConsecutiveUnlinkableBlocks(5)},
+		[]hub.Option{hub.WithMaxConsecutiveUnlinkableBlocks(5), hub.WithLogger(zlog)},
 		options...,
 	)
 
@@ -109,6 +110,7 @@ func NewMultiplexedSource(handler bstream.Handler, sources []SourceAddr, maxSour
 			gate := bstream.NewRealtimeGate(maxSourceLatency, subHandler, bstream.GateOptionWithLogger(logger))
 			var upstreamHandler bstream.Handler
 			upstreamHandler = bstream.HandlerFunc(func(blk *pbbstream.Block, obj interface{}) error {
+				metrics.SourceHeadBlockTimeDrift.SetBlockTime(sourceName, blk.Timestamp.AsTime())
 				if ztrace.Enabled() {
 					logger.Debug("received block", zap.Uint64("number", blk.Number), zap.String("id", blk.Id), zap.Int64("latency_ms", time.Since(blk.Timestamp.AsTime()).Milliseconds()))
 				}
@@ -142,6 +144,21 @@ func (r *Relayer) Run() {
 	go r.hub.Run()
 	zlog.Info("waiting for hub to be ready...")
 	<-r.hub.Ready
+
+	// Seed head metrics from the bootstrapped hub head so we report it
+	// immediately, instead of only once a live block flows through the forkable.
+	if headNum, headID, headTime, libNum, err := r.hub.HeadInfo(); err == nil {
+		zlog.Info("seeding head metrics from hub head",
+			zap.Uint64("head_num", headNum),
+			zap.String("head_id", headID),
+			zap.Time("head_time", headTime),
+			zap.Uint64("lib_num", libNum),
+		)
+		metrics.HeadBlockNumber.SetUint64(headNum)
+		metrics.HeadBlockTimeDrift.SetBlockTime(headTime)
+		metrics.HeadBlockRelativeDrift.SetLastBlock(headTime)
+		metrics.FinalizedBlockNumber.SetUint64(libNum)
+	}
 
 	r.OnTerminating(func(e error) {
 		zlog.Info("closing block stream server")

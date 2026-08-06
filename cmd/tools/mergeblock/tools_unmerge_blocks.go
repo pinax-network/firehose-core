@@ -44,7 +44,12 @@ func runUnmergeBlocksE(zlog *zap.Logger) firecore.CommandExecutor {
 			return fmt.Errorf("parsing block range: %w", err)
 		}
 
-		err = srcStore.Walk(ctx, check.WalkBlockPrefix(blockRange, 100), func(filename string) error {
+		bundleSize, err := firecore.GetMergedBlocksBundleSizeFlag(cmd)
+		if err != nil {
+			return err
+		}
+
+		err = srcStore.Walk(ctx, check.WalkBlockPrefix(blockRange, bundleSize), func(filename string) error {
 			zlog.Debug("checking merged block file", zap.String("filename", filename))
 
 			startBlock := firecore.MustParseUint64(filename)
@@ -54,7 +59,7 @@ func runUnmergeBlocksE(zlog *zap.Logger) firecore.CommandExecutor {
 				return dstore.StopIteration
 			}
 
-			if startBlock+100 < uint64(blockRange.Start) {
+			if startBlock+bundleSize < uint64(blockRange.Start) {
 				zlog.Debug("skipping merged block file", zap.String("reason", "before start block"), zap.String("filename", filename))
 				return nil
 			}
@@ -75,6 +80,9 @@ func runUnmergeBlocksE(zlog *zap.Logger) firecore.CommandExecutor {
 				block, err := br.Read()
 				if errors.Is(err, io.EOF) {
 					break
+				}
+				if err != nil {
+					return fmt.Errorf("reading block from %s: %w", filename, err)
 				}
 
 				if block.Number < uint64(blockRange.Start) {

@@ -78,7 +78,9 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 			cmd.Flags().Uint64("substreams-tier1-default-max-request-per-user", 3, "default max request per user, this will be use of the global worker pool is not reachable. Default is 5")
 			cmd.Flags().Uint64("substreams-tier1-default-minimal-request-life-time-second", 180, "default minimal request request life time, this will be use of the global worker pool is not reachable.")
 			cmd.Flags().String("substreams-tier1-foundational-stores-config-path", "", "default path for foundational stores endpoint configuration file")
+			cmd.Flags().String("substreams-tier1-hosted-store-registry-address", "", "gRPC address of the control-plane registry service used to resolve hosted foundational stores (legacy/current stores continue to use the JSON config path)")
 			cmd.Flags().Uint64("substreams-tier1-output-buffer-size", 100, "max number of messages bundled into BlockScopedDatas (for clients using v4)")
+			cmd.Flags().Uint64("substreams-tier1-store-size-limit", 0, "Override the default store size limit (in bytes) for tier2 stores. 0 keeps the default of 1GiB. Forwarded to tier2 on each subrequest.")
 			// all substreams
 			registerCommonSubstreamsFlags(cmd)
 			return nil
@@ -144,6 +146,7 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 			config.StateStoreURL = firecore.MustReplaceDataDir(sfDataDir, viper.GetString("substreams-state-store-url"))
 			config.StateStoreDefaultTag = viper.GetString("substreams-state-store-default-tag")
 			config.StateBundleSize = viper.GetUint64("substreams-state-bundle-size")
+			config.MergedBlocksBundleSize = viper.GetUint64("common-merged-blocks-bundle-size")
 			config.MaxSubrequests = viper.GetUint64("substreams-tier1-max-subrequests")
 			config.SubrequestsEndpoint = viper.GetString("substreams-tier1-subrequests-endpoint")
 			config.ActiveRequestsSoftLimit = viper.GetInt("substreams-tier1-active-requests-soft-limit")
@@ -160,7 +163,11 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 			config.ServiceDiscoveryURL = serviceDiscoveryURL
 			config.QuickSaveStoreURL = viper.GetString("substreams-tier1-quicksave-store")
 			config.FoundationalStoresConfigPath = viper.GetString("substreams-tier1-foundational-stores-config-path")
+			config.HostedStoreRegistryAddress = viper.GetString("substreams-tier1-hosted-store-registry-address")
 			config.OutputBufferSize = viper.GetUint64("substreams-tier1-output-buffer-size")
+			config.StoresScratchSpace = firecore.MustReplaceDataDir(sfDataDir, viper.GetString("substreams-stores-scratch-space"))
+			config.StoresBackend = viper.GetString("substreams-stores-backend")
+			config.StoreSizeLimit = viper.GetUint64("substreams-tier1-store-size-limit")
 
 			sessionPlugin := viper.GetString("common-session-plugin")
 			sessionPool, err := dsession.New(sessionPlugin, appLogger)

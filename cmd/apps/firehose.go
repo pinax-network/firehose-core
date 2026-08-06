@@ -17,6 +17,7 @@ import (
 	"github.com/streamingfast/firehose-core/firehose/app/firehose"
 	"github.com/streamingfast/firehose-core/firehose/server"
 	"github.com/streamingfast/firehose-core/launcher"
+	coremetrics "github.com/streamingfast/firehose-core/metrics"
 	"github.com/streamingfast/logging"
 	"go.uber.org/zap"
 )
@@ -24,6 +25,7 @@ import (
 var metricset = dmetrics.NewSet()
 var headBlockNumMetric = metricset.NewHeadBlockNumber("firehose")
 var headTimeDriftmetric = metricset.NewHeadTimeDrift("firehose")
+var finalizedBlockNumMetric = coremetrics.NewFinalizedBlockNumber("firehose")
 
 func RegisterFirehoseApp[B firecore.Block](chain *firecore.Chain[B], rootLog *zap.Logger) {
 	appLogger, appTracer := logging.PackageLogger("firehose", "firehose")
@@ -38,6 +40,7 @@ func RegisterFirehoseApp[B firecore.Block](chain *firecore.Chain[B], rootLog *za
 			cmd.Flags().Int("firehose-rate-limit-bucket-size", -1, "Rate limit bucket size (default: no rate limit)")
 			cmd.Flags().Duration("firehose-rate-limit-bucket-fill-rate", 10*time.Second, "Rate limit bucket refill rate (default: 10s)")
 			cmd.Flags().Bool("firehose-enforce-compression", true, "Reject any request that does not accept gzip or zstd encoding in their GRPC/Connect header")
+			cmd.Flags().Bool("firehose-discard-partial-blocks", false, "Drop partial (flash) blocks coming from the live source before they reach the forkable hub; use to disable flash/partial block processing in the firehose app")
 
 			return nil
 		},
@@ -107,18 +110,20 @@ func RegisterFirehoseApp[B firecore.Block](chain *firecore.Chain[B], rootLog *za
 				OneBlocksStoreURL:       oneBlocksStoreURL,
 				ForkedBlocksStoreURL:    forkedBlocksStoreURL,
 				BlockStreamAddr:         viper.GetString("common-live-blocks-addr"),
+				DiscardPartialBlocks:    viper.GetBool("firehose-discard-partial-blocks"),
 				GRPCListenAddr:          viper.GetString("firehose-grpc-listen-addr"),
 				GRPCShutdownGracePeriod: 1 * time.Second,
 				ServiceDiscoveryURL:     serviceDiscoveryURL,
 				ServerOptions:           serverOptions,
 			}, &firehose.Modules{
-				Authenticator:         authenticator,
-				SessionPool:           sessionPool,
-				HeadTimeDriftMetric:   headTimeDriftmetric,
-				HeadBlockNumberMetric: headBlockNumMetric,
-				TransformRegistry:     registry,
-				CheckPendingShutdown:  runtime.IsPendingShutdown,
-				InfoServer:            runtime.InfoServer,
+				Authenticator:              authenticator,
+				SessionPool:                sessionPool,
+				HeadTimeDriftMetric:        headTimeDriftmetric,
+				HeadBlockNumberMetric:      headBlockNumMetric,
+				FinalizedBlockNumberMetric: finalizedBlockNumMetric,
+				TransformRegistry:          registry,
+				CheckPendingShutdown:       runtime.IsPendingShutdown,
+				InfoServer:                 runtime.InfoServer,
 			}), nil
 		},
 	})

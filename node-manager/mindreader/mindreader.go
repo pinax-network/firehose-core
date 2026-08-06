@@ -31,6 +31,7 @@ import (
 	"github.com/streamingfast/dstore"
 	"github.com/streamingfast/firehose-core/internal/utils"
 	nodeManager "github.com/streamingfast/firehose-core/node-manager"
+	"github.com/streamingfast/firehose-core/node-manager/metrics"
 	"github.com/streamingfast/logging"
 	"github.com/streamingfast/shutter"
 	"go.uber.org/zap"
@@ -205,6 +206,7 @@ func (p *MindReaderPlugin) Launch() {
 	consoleReader, err := p.consoleReaderFactory(lines)
 	if err != nil {
 		p.Shutdown(err)
+		return
 	}
 
 	p.consoleReader = consoleReader
@@ -495,6 +497,10 @@ func (p *MindReaderPlugin) readOneMessage(blocks chan<- *pbbstream.Block) error 
 func (p *MindReaderPlugin) LogLine(in string) {
 	if p.IsTerminating() {
 		return
+	}
+
+	if size := float64(len(in)); size > metrics.MaxReadBlockSize.Get() {
+		metrics.MaxReadBlockSize.SetFloat64(size)
 	}
 
 	p.lines <- in

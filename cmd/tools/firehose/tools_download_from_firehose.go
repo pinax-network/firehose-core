@@ -48,6 +48,16 @@ func createToolsDownloadFromFirehoseE[B firecore.Block](chain *firecore.Chain[B]
 		blockRange, err := types.GetBlockRangeFromArg(args[1])
 		cli.NoError(err, "Unable to parse range argument %q", rangeArg)
 
+		bundleSize, err := firecore.GetMergedBlocksBundleSizeFlag(cmd)
+		if err != nil {
+			return err
+		}
+
+		lowBlock := uint64(blockRange.Start)
+		if lowBlock%bundleSize != 0 && lowBlock != bstream.GetProtocolFirstStreamableBlock {
+			return fmt.Errorf("start block %d must be on a merged-blocks boundary (a multiple of %d) or be the first streamable block of the chain (%d), otherwise the first merged-blocks file would be incomplete", lowBlock, bundleSize, bstream.GetProtocolFirstStreamableBlock)
+		}
+
 		firehoseClient, connClose, requestInfo, err := getFirehoseStreamClientFromCmd(cmd, zlog, endpoint, chain)
 		if err != nil {
 			return err
@@ -62,13 +72,11 @@ func createToolsDownloadFromFirehoseE[B firecore.Block](chain *firecore.Chain[B]
 		}
 
 		mergeWriter := &firecore.MergedBlocksWriter{
-			Store:      store,
-			TweakBlock: func(b *pbbstream.Block) (*pbbstream.Block, error) { return b, nil },
-			Logger:     zlog,
-		}
-
-		if lowBlock := uint64(blockRange.Start); lowBlock%100 == 0 {
-			mergeWriter.LowBlockNum = lowBlock
+			Store:       store,
+			BundleSize:  bundleSize,
+			LowBlockNum: firecore.LowBoundaryFor(lowBlock, bundleSize),
+			TweakBlock:  func(b *pbbstream.Block) (*pbbstream.Block, error) { return b, nil },
+			Logger:      zlog,
 		}
 
 		approximateLIBWarningIssued := false

@@ -139,10 +139,14 @@ func (s *DStoreIO) MergeAndStore(ctx context.Context, inclusiveLowerBlock uint64
 	err = Retry(s.logger, s.retryAttempts, s.retryCooldown, func() error {
 		inCtx, cancel := context.WithTimeout(ctx, WriteObjectTimeout)
 		defer cancel()
-		streamReader, err := NewStreamingBundleReader(ctx, s.logger, filteredOBF, anyOneBlockFile, s.OpenOneBlockFile)
+		streamReader, err := NewStreamingBundleReader(inCtx, s.logger, filteredOBF, anyOneBlockFile, s.OpenOneBlockFile)
 		if err != nil {
 			return err
 		}
+		// If WriteObject returns without draining the reader (timeout or error), the
+		// feeding goroutine would block forever on the pipe, holding an open one-block
+		// reader on every retry. Closing the read end unblocks it so it can exit.
+		defer streamReader.Close()
 		return s.mergedBlocksStore.WriteObject(inCtx, bundleFilename, streamReader)
 	})
 	if err != nil {
@@ -204,6 +208,9 @@ func (s *DStoreIO) NextBundle(ctx context.Context, lowestBaseBlock uint64) (outB
 		}
 		metrics.HeadBlockTimeDrift.SetBlockTime(*lastTime)
 		metrics.HeadBlockNumber.SetUint64(last.Num())
+		// The merger only ever bundles irreversible blocks, so its head block is a
+		// finalized block, hence both metrics reporting the same value.
+		metrics.FinalizedBlockNumber.SetUint64(last.Num())
 		lib = last
 	}
 

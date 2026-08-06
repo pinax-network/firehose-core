@@ -15,11 +15,24 @@ const (
 )
 
 // QueryOptions contains parameters for querying connection logs
+//
+// Either UserID or TraceID must be set. UserID matches all requests for an
+// organization; TraceID matches a single request via Cloud Logging SEARCH().
 type QueryOptions struct {
 	UserID    string
+	TraceID   string
 	Namespace string
 	StartTime time.Time
 	EndTime   time.Time
+
+	// AllMessages disables the "incoming request"/"request stats" message
+	// restriction, returning every log entry matching the subject (trace ID or
+	// user ID) instead. Used to display the raw logs of a single request.
+	AllMessages bool
+
+	// Limit caps the number of entries returned, keeping the newest ones. Zero
+	// means no limit.
+	Limit int
 }
 
 // ConnectionLog represents a single connection (may be partial if stats not yet received)
