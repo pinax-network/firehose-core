@@ -83,10 +83,13 @@ func ConfigureToolsCmd[B firecore.Block](
 	ToolsCmd.AddCommand(mergeblock.NewToolsUnmergeBlocksCmd(chain, logger))
 	ToolsCmd.AddCommand(mergeblock.NewToolsMergeBlocksCmd(chain, logger))
 	ToolsCmd.AddCommand(mergeblock.NewToolsResizeMergedBlocksCmd(chain, logger))
+	ToolsCmd.AddCommand(mergeblock.NewToolsAnnotateMergedBlocksCmd(logger))
+	ToolsCmd.AddCommand(mergeblock.NewToolsStatsMergedBlocksCmd(logger))
 	ToolsCmd.AddCommand(fix.NewToolsFixBloatedMergedBlocks(chain, logger))
 	ToolsCmd.AddCommand(relayer.NewToolsRelayerGroup(chain, logger))
 	ToolsCmd.AddCommand(substreams.NewToolsSubstreamsCmd(chain, logger))
 	ToolsCmd.AddCommand(NewToolsNetworksCmd(chain, logger))
+	ToolsCmd.AddCommand(NewToolsLastOneBlockCmd(logger))
 	ToolsCmd.AddCommand(toolswkp.NewToolsWKPCmd(chain, logger))
 
 	if chain.Tools.MergedBlockUpgrader != nil {
