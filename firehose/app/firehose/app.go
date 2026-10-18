@@ -39,6 +39,8 @@ import (
 	"github.com/streamingfast/shutter"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
+
+	ssapp "github.com/streamingfast/substreams/app"
 )
 
 // Unlinkable live blocks in a row that mean the hub is wedged for good. Resets on
@@ -50,7 +52,6 @@ type Config struct {
 	OneBlocksStoreURL       string
 	ForkedBlocksStoreURL    string
 	BlockStreamAddr         string        // gRPC endpoint to get real-time blocks, can be "" in which live streams is disabled
-	DiscardPartialBlocks    bool          // When true, partial (flash) blocks received from the live source are dropped before reaching the forkable hub
 	GRPCListenAddr          string        // gRPC address where this app will listen to
 	GRPCShutdownGracePeriod time.Duration // The duration we allow for gRPC connections to terminate gracefully prior forcing shutdown
 	ServiceDiscoveryURL     *url.URL
@@ -69,6 +70,11 @@ type Modules struct {
 
 	// Optional dependencies
 	FinalizedBlockNumberMetric *coremetrics.FinalizedBlockNum
+
+	// ForkableHub is a hub that another part of the process owns, runs and feeds
+	// metrics from, shared with substreams tier1. When nil, firehose builds and
+	// runs its own.
+	ForkableHub *hub.ForkableHub
 }
 
 type App struct {
@@ -119,16 +125,15 @@ func (a *App) Run() error {
 		}
 	}
 
-	withLive := a.config.BlockStreamAddr != ""
+	withLive := a.config.BlockStreamAddr != "" || a.modules.ForkableHub != nil
 
 	var forkableHub *hub.ForkableHub
 
-	if withLive {
-		discardPartialBlocks := a.config.DiscardPartialBlocks
-		if discardPartialBlocks {
-			a.logger.Info("partial (flash) blocks will be discarded from the live source before reaching the forkable hub")
-		}
-
+	if a.modules.ForkableHub != nil {
+		a.logger.Info("using the forkable hub shared by the process")
+		forkableHub = a.modules.ForkableHub
+		forkableHub.OnTerminated(a.Shutdown)
+	} else if withLive {
 		liveSourceFactory := bstream.SourceFactory(func(h bstream.Handler) bstream.Source {
 
 			return blockstream.NewSource(
@@ -136,9 +141,6 @@ func (a *App) Run() error {
 				a.config.BlockStreamAddr,
 				2,
 				bstream.HandlerFunc(func(blk *pbbstream.Block, obj any) error {
-					if discardPartialBlocks && blk.PartialIndex != 0 {
-						return nil
-					}
 					a.modules.HeadBlockNumberMetric.SetUint64(blk.Number)
 					a.modules.HeadTimeDriftMetric.SetBlockTime(blk.Time())
 					if a.modules.FinalizedBlockNumberMetric != nil {
@@ -150,12 +152,9 @@ func (a *App) Run() error {
 			)
 		})
 
-		// the hub must hold at least two merged-blocks files worth of final
-		// blocks so the joining source can hand off from a file boundary
-		keepFinalBlocks := int(max(500, 2*bstream.DefaultMergedBlocksBundleSize))
 		forkableHub = hub.NewForkableHubWithOptions(
 			liveSourceFactory,
-			keepFinalBlocks,
+			ssapp.HubKeepFinalBlocks(bstream.DefaultMergedBlocksBundleSize),
 			oneBlocksStore,
 			[]hub.Option{
 				hub.WithLogger(a.logger),
@@ -199,7 +198,6 @@ func (a *App) Run() error {
 			a.logger.Info("waiting until hub is real-time synced")
 			select {
 			case <-forkableHub.Ready:
-				metrics.AppReadiness.SetReady()
 			case <-a.Terminating():
 				return
 			}
@@ -209,10 +207,12 @@ func (a *App) Run() error {
 		defer cancel()
 		if err := a.modules.InfoServer.Init(ctx, forkableHub, mergedBlocksStore, oneBlocksStore, a.logger); err != nil {
 			a.Shutdown(fmt.Errorf("cannot initialize info server: %w", err))
+			return
 		}
 
 		a.logger.Info("launching gRPC firehoseServer", zap.Bool("live_support", withLive))
 		a.isReady.CAS(false, true)
+		metrics.AppReadiness.SetReady()
 		firehoseServer.Launch()
 	}()
 

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -25,7 +26,6 @@ import (
 	"github.com/streamingfast/cli"
 	"github.com/streamingfast/dauth"
 	discoveryservice "github.com/streamingfast/dgrpc/server/discovery-service"
-	"github.com/streamingfast/dsession"
 	_ "github.com/streamingfast/dsession/local"
 	firecore "github.com/streamingfast/firehose-core"
 	"github.com/streamingfast/firehose-core/launcher"
@@ -53,6 +53,16 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 			cmd.Flags().String("substreams-tier1-discovery-service-url", "", "URL to configure the grpc discovery service, used for communication with tier2") //traffic-director://xds?vpc_network=vpc-global&use_xds_reds=true
 			cmd.Flags().Bool("substreams-tier1-subrequests-insecure", false, "Connect to tier2 without checking certificate validity")
 			cmd.Flags().Bool("substreams-tier1-subrequests-plaintext", true, "Connect to tier2 without client in plaintext mode")
+			cmd.Flags().String("substreams-tier1-squasher-plugin", "", cli.FlagDescription(`
+				DSN selecting the store-merge implementation, same shape as --common-auth-plugin.
+				Empty or local:// keeps in-process squashing.
+
+				Production uses grpcs://host?secret=<token>. TLS, port defaults to 443,
+				and secret is sent as the authorization header.
+
+				Plaintext local/dev uses grpc://host:port (port required). Extra TLS/plaintext
+				toggles stay on the DSN query string (insecure=true, plaintext=false).
+			`))
 			cmd.Flags().Bool("substreams-tier1-enforce-compression", true, "Reject any request that does not accept gzip or zstd encoding in their GRPC/Connect header")
 			cmd.Flags().Int("substreams-tier1-max-subrequests", 4, "default number of parallel subrequests that the tier1 makes to the tier2 per request")
 			cmd.Flags().String("substreams-tier1-block-type", "", "Block type to use for the substreams tier1 (Ex: sf.ethereum.type.v2.Block)")
@@ -71,6 +81,13 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 				This is useful to prevent the tier1 from being overwhelmed by too many requests, most client auto-reconnects on 'Unavailable' code
 				so they should end up on another tier1 instance, assuming you have proper auto-scaling of the number of instances available.
 			`))
+			cmd.Flags().Duration("substreams-tier1-max-request-duration", 0, cli.FlagDescription(`
+				If non-zero, a client request that has run for this long is ended gracefully: stores are quick-saved (see
+				--substreams-tier1-quicksave-store) and the client is told to reconnect with an 'Unavailable' code.
+
+				Set it a bit under the stream duration limit of the load balancer serving requests, so requests end cleanly
+				before the load balancer cuts them. 0 means no limit.
+			`))
 			cmd.Flags().String("substreams-tier1-quicksave-store", "", "If enabled, substreams will use this store to put 'quicksave' data when shutting down while running requests with 'stores'. Use this flag with a non-zero --common-system-shutdown-signal-delay")
 			cmd.Flags().String("substreams-tier1-global-worker-pool-address", "", "Address of the global worker pool to use for the substreams tier1. (disabled if empty)")
 			cmd.Flags().String("substreams-tier1-global-request-pool-address", "", "Address of the global worker pool to use for the substreams tier1. (disabled if empty)")
@@ -82,6 +99,7 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 			cmd.Flags().String("substreams-tier1-hosted-store-registry-address", "", "gRPC address of the control-plane registry service used to resolve hosted foundational stores (legacy/current stores continue to use the JSON config path)")
 			cmd.Flags().Uint64("substreams-tier1-output-buffer-size", 100, "max number of messages bundled into BlockScopedDatas (for clients using v4)")
 			cmd.Flags().Uint64("substreams-tier1-store-size-limit", 0, "Override the default store size limit (in bytes) for tier2 stores. 0 keeps the default of 1GiB. Forwarded to tier2 on each subrequest.")
+			cmd.Flags().Bool("substreams-tier1-allow-pruned-chain", false, "Serve modules (mappers and stores) whose initial block is below --common-first-streamable-block, after the chain was pruned: they run from that block on, and their stores resume from snapshots taken before the pruning. Requests using a store without an initial block are refused. Forwarded to tier2 on each subrequest.")
 			cmd.Flags().String("substreams-tier1-cpu-eviction-mode", "off", cli.FlagDescription(`
 				How the tier1 reacts when its own cgroup reports the CPU saturated:
 
@@ -93,8 +111,20 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 				When it does cancel, the tier1 first advertises itself as unready so the load balancer stops sending it
 				traffic, waits for --substreams-tier1-cpu-eviction-drain-delay, then cancels the heaviest requests with
 				'Unavailable' until the projected CPU usage fits under --substreams-tier1-cpu-eviction-target-ratio, so
-				their clients reconnect to a less busy instance. Development-mode requests go first, then production
-				requests on live blocks, then production requests still catching up from files.
+				their clients reconnect to a less busy instance, in the order set by --substreams-tier1-cpu-eviction-order.
+			`))
+			cmd.Flags().StringSlice("substreams-tier1-cpu-eviction-order", []string{"dev", "prod-cached", "prod-catchup"}, cli.FlagDescription(`
+				Request classes the eviction may cancel, least important first. A class left out is never
+				cancelled. Within a class, the request burning the most CPU goes first.
+
+				* 'dev' is a development-mode request
+				* 'prod-cached' is a production-mode request that has not processed a block on this instance yet, only
+				  streaming outputs cached by tier2. It runs no wasm here, so --substreams-tier1-cpu-eviction-min-burn-cores
+				  does not apply to it, and a round of eviction stops right after cancelling one
+				* 'prod-catchup' is a production-mode request processing blocks that has not reached live blocks
+				* 'prod-live' is a production-mode request that has received live blocks
+
+				The 'dev-only' mode cancels 'dev' requests only, whatever this order says.
 			`))
 			cmd.Flags().Float64("substreams-tier1-cpu-eviction-threshold", 0.90, "CPU usage, as a fraction of the cgroup quota, above which the tier1 is considered overloaded")
 			cmd.Flags().Duration("substreams-tier1-cpu-eviction-sustain", 15*time.Second, "How long the CPU usage must stay above --substreams-tier1-cpu-eviction-threshold before the tier1 acts on it")
@@ -192,6 +222,7 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 			config.SubrequestsInsecure = viper.GetBool("substreams-tier1-subrequests-insecure")
 			config.SubrequestsPlaintext = viper.GetBool("substreams-tier1-subrequests-plaintext")
 			config.SubrequestsSecret = os.Expand(viper.GetString("substreams-tier1-subrequests-secret-key"), os.Getenv)
+			config.SquasherPlugin = viper.GetString("substreams-tier1-squasher-plugin")
 			config.BlockType = blockType
 			config.WASMExtensions = wasmExtensions
 			config.BlockExecutionTimeout = viper.GetDuration("substreams-block-execution-timeout")
@@ -200,19 +231,26 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 			config.GRPCShutdownGracePeriod = time.Second
 			config.ServiceDiscoveryURL = serviceDiscoveryURL
 			config.QuickSaveStoreURL = viper.GetString("substreams-tier1-quicksave-store")
+			config.MaxRequestDuration = viper.GetDuration("substreams-tier1-max-request-duration")
 			config.FoundationalStoresConfigPath = viper.GetString("substreams-tier1-foundational-stores-config-path")
 			config.HostedStoreRegistryAddress = viper.GetString("substreams-tier1-hosted-store-registry-address")
 			config.OutputBufferSize = viper.GetUint64("substreams-tier1-output-buffer-size")
 			config.StoresScratchSpace = firecore.MustReplaceDataDir(sfDataDir, viper.GetString("substreams-stores-scratch-space"))
 			config.StoresBackend = viper.GetString("substreams-stores-backend")
 			config.StoreSizeLimit = viper.GetUint64("substreams-tier1-store-size-limit")
+			config.AllowPrunedChain = viper.GetBool("substreams-tier1-allow-pruned-chain")
 
 			evictionMode, err := active_requests.ParseEvictionMode(viper.GetString("substreams-tier1-cpu-eviction-mode"))
 			if err != nil {
 				return nil, fmt.Errorf("substreams-tier1-cpu-eviction-mode: %w", err)
 			}
+			evictionOrder, err := active_requests.ParseEvictionOrder(strings.Join(viper.GetStringSlice("substreams-tier1-cpu-eviction-order"), ","))
+			if err != nil {
+				return nil, fmt.Errorf("substreams-tier1-cpu-eviction-order: %w", err)
+			}
 			config.CPUEviction = active_requests.EvictorConfig{
 				Mode:               evictionMode,
+				Order:              evictionOrder,
 				Threshold:          viper.GetFloat64("substreams-tier1-cpu-eviction-threshold"),
 				RecoverThreshold:   viper.GetFloat64("substreams-tier1-cpu-eviction-recover-threshold"),
 				TargetRatio:        viper.GetFloat64("substreams-tier1-cpu-eviction-target-ratio"),
@@ -227,10 +265,9 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 				NominalCapacity:    viper.GetFloat64("substreams-tier1-cpu-eviction-nominal-capacity"),
 			}
 
-			sessionPlugin := viper.GetString("common-session-plugin")
-			sessionPool, err := dsession.New(sessionPlugin, appLogger)
+			forkableHub, err := sharedLiveHub(runtime)
 			if err != nil {
-				return nil, fmt.Errorf("unable to create session pool: %w", err)
+				return nil, fmt.Errorf("unable to set up the shared forkable hub: %w", err)
 			}
 
 			return app.NewTier1(appLogger,
@@ -240,7 +277,8 @@ func RegisterSubstreamsTier1App[B firecore.Block](chain *firecore.Chain[B], root
 					HeadBlockNumberMetric: ss1HeadBlockNumMetric,
 					CheckPendingShutDown:  runtime.IsPendingShutdown,
 					InfoServer:            runtime.InfoServer,
-					SessionPool:           sessionPool,
+					SessionPool:           runtime.SessionPool,
+					ForkableHub:           forkableHub,
 				}), nil
 		},
 	})

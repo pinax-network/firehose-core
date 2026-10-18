@@ -11,7 +11,6 @@ import (
 	"github.com/streamingfast/dauth"
 	discoveryservice "github.com/streamingfast/dgrpc/server/discovery-service"
 	"github.com/streamingfast/dmetrics"
-	"github.com/streamingfast/dsession"
 	_ "github.com/streamingfast/dsession/local"
 	firecore "github.com/streamingfast/firehose-core"
 	"github.com/streamingfast/firehose-core/firehose/app/firehose"
@@ -40,7 +39,6 @@ func RegisterFirehoseApp[B firecore.Block](chain *firecore.Chain[B], rootLog *za
 			cmd.Flags().Int("firehose-rate-limit-bucket-size", -1, "Rate limit bucket size (default: no rate limit)")
 			cmd.Flags().Duration("firehose-rate-limit-bucket-fill-rate", 10*time.Second, "Rate limit bucket refill rate (default: 10s)")
 			cmd.Flags().Bool("firehose-enforce-compression", true, "Reject any request that does not accept gzip or zstd encoding in their GRPC/Connect header")
-			cmd.Flags().Bool("firehose-discard-partial-blocks", false, "Drop partial (flash) blocks coming from the live source before they reach the forkable hub; use to disable flash/partial block processing in the firehose app")
 
 			return nil
 		},
@@ -92,12 +90,7 @@ func RegisterFirehoseApp[B firecore.Block](chain *firecore.Chain[B], rootLog *za
 				serverOptions = append(serverOptions, server.WithEnforceCompression(true))
 			}
 
-			sessionPlugin := viper.GetString("common-session-plugin")
-			sessionPool, err := dsession.New(sessionPlugin, appLogger)
-			if err != nil {
-				return nil, fmt.Errorf("unable to create session pool: %w", err)
-			}
-			serverOptions = append(serverOptions, server.WithSessionPool(sessionPool))
+			serverOptions = append(serverOptions, server.WithSessionPool(runtime.SessionPool))
 
 			limiterSize := viper.GetInt("firehose-rate-limit-bucket-size")
 			limiterRefillRate := viper.GetDuration("firehose-rate-limit-bucket-fill-rate")
@@ -105,25 +98,30 @@ func RegisterFirehoseApp[B firecore.Block](chain *firecore.Chain[B], rootLog *za
 				serverOptions = append(serverOptions, server.WithLeakyBucketLimiter(limiterSize, limiterRefillRate))
 			}
 
+			forkableHub, err := sharedLiveHub(runtime)
+			if err != nil {
+				return nil, fmt.Errorf("unable to set up the shared forkable hub: %w", err)
+			}
+
 			return firehose.New(appLogger, appTracer, &firehose.Config{
 				MergedBlocksStoreURL:    mergedBlocksStoreURL,
 				OneBlocksStoreURL:       oneBlocksStoreURL,
 				ForkedBlocksStoreURL:    forkedBlocksStoreURL,
 				BlockStreamAddr:         viper.GetString("common-live-blocks-addr"),
-				DiscardPartialBlocks:    viper.GetBool("firehose-discard-partial-blocks"),
 				GRPCListenAddr:          viper.GetString("firehose-grpc-listen-addr"),
 				GRPCShutdownGracePeriod: 1 * time.Second,
 				ServiceDiscoveryURL:     serviceDiscoveryURL,
 				ServerOptions:           serverOptions,
 			}, &firehose.Modules{
 				Authenticator:              authenticator,
-				SessionPool:                sessionPool,
+				SessionPool:                runtime.SessionPool,
 				HeadTimeDriftMetric:        headTimeDriftmetric,
 				HeadBlockNumberMetric:      headBlockNumMetric,
 				FinalizedBlockNumberMetric: finalizedBlockNumMetric,
 				TransformRegistry:          registry,
 				CheckPendingShutdown:       runtime.IsPendingShutdown,
 				InfoServer:                 runtime.InfoServer,
+				ForkableHub:                forkableHub,
 			}), nil
 		},
 	})

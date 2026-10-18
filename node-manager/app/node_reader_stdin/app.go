@@ -43,9 +43,10 @@ type Config struct {
 	LogToZap                   bool
 	DebugDeepMind              bool
 
-	// MaxLineLengthInBytes configures the maximum bytes a single line consumed can be
-	// without any error. If left unspecified or 0, the default is 50 MiB (50 * 1024 * 1024).
-	MaxLineLengthInBytes int64
+	// LineBufferSizeInBytes is the normal size of the buffer reading lines, see
+	// [consoleline.NewSplitter]. If left unspecified or 0, [consoleline.DefaultBufferSize]
+	// is used.
+	LineBufferSizeInBytes int64
 
 	// GRPCSecretKey, when non-empty, requires every incoming gRPC call to present
 	// the key as a Bearer token in the "authorization" metadata header.

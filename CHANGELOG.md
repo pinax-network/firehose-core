@@ -8,7 +8,152 @@ Operators, you should copy/paste content of this content straight to your projec
 
 If you were at `firehose-core` version `1.0.0` and are bumping to `1.1.0`, you should copy the content between those 2 version to your own repository, replacing placeholder value `fire{chain}` with your chain's own binary.
 
+## v1.21.0
+
+### Fixed
+
+- `index-builder` now serves its health check, over gRPC and HTTP `/healthz`, on `--index-builder-grpc-listen-addr`, which it never listened on.
+
+- The tools writing merged-blocks files (`resize-merged-blocks`, `download-from-firehose` and others) now fail instead of writing a block to a file whose range does not hold it. The previous bundle's last block carried into the files of a gap is still written.
+
+- `index-builder` no longer restarts indexing from `--index-builder-start-block` when the index store errors at startup (for example, a transient S3 failure). It now retries, then fails startup so the process restarts, instead of treating the store as empty. A failed index write now stops the indexer instead of being logged and skipped, which left a gap that made every later restart rewind to it (requires chains to propagate the error from their indexer's `ProcessBlock`) (#288).
+
+- Merger no longer moves canonical one-block files to the forked-blocks store when readers write the same block with a different LIB, as happens on Polygon PoS / Amoy. Only blocks with another ID at the same height are moved.
+
+- The reader now always clamps a decoded block's `lib_num` down to its own block number when the node/plugin reports `lib_num` greater than the block number (invalid; `lib_num` equal to the block number is still valid), logs an error and increments `reader_node_invalid_libnum_clamped_count`, instead of letting the bad value reach the relayer where it moved LIB past head and silently stalled it forever.
+
+- zstd stores (merged blocks, one-block files, substreams states) now close the object's HTTP stream or file when a reader is closed before the end of the file. Streams stopping mid-bundle, at their stop block or when the client goes away, used to leave it open.
+
+- Firehose and substreams-tier1 now return the sessions they still hold to the session server before exiting, whatever `--common-system-shutdown-signal-delay` is set to. Sessions of requests cut by the shutdown used to be released in the background while the process exited, so they stayed counted against the organization until they expired on the session server, and a client reconnecting right away could be refused with `Concurrent stream limit exceeded`. This applies to session plugins implementing `Close(ctx) error`, which the `tgm://` plugin does.
+
+- Substreams: Fix tier1 requests rejected before their body is read (authentication, compression enforcement) sometimes failing at a load balancer with HTTP 502 or `INTERNAL` instead of returning their error.
+
+- Substreams: Fix a tier1 panic (`INTERNAL: runtime error: invalid memory address or nil pointer dereference`) on a production-mode request starting past the chain's final block, when that final block falls within the first segment of the request's stores.
+
+- Firehose, substreams-tier1 and the relayer no longer exit with `received 5 consecutive unlinkable blocks` or `cannot link block after reconnection` when they start while the merger is deleting the one-block files of a bundle it just merged.
+
+- `tools substreams prune-states`, `prune-outputs` and `purge` no longer fail deletions on GCS with `429 rateLimitExceeded` ("request distribution is too uneven across the key-ranges" or "request-rate on the bucket has ramped up too fast"). They now delete in random order instead of listing order, which sent every concurrent deletion to the same part of the bucket, are capped by the new `--delete-rate` flag, and retry a failed deletion 5 times over several seconds instead of twice over 50ms.
+
+- Startup no longer lowers the open-files limit (`RLIMIT_NOFILE`) to 24,576 when it can't raise it to 1,000,000 and the current limit is already higher, as in containers without `CAP_SYS_RESOURCE` (k0s: 999,999, containerd 2.x: 524,288). It now keeps the current limit.
+
+- Substreams: Fix wasm calls that fail because the host ran out of file descriptors or memory (for example `Too many open files` while creating an instance) being reported as deterministic errors, which returned `InvalidArgument` and were cached for 1h. They now return `Internal`, and the shared cache runs the call again instead of handing the same error to every stream on that block.
+
+### Added
+
+- `tools resize-merged-blocks --fix-misplaced-blocks` rewrites a store where merged-blocks files hold blocks outside of their range, as the empty files of a gap in block numbers can (ex: near-testnet around block 53461716). Each block is written to the file of its own number, with its parent number set to the last block written. A block at or below the last block written is skipped, and one that does not have it as parent stops the process with an error. Without the flag, such a store fails with `contains block ..., beyond the configured bundle size`.
+
+- Store URLs, such as `--common-merged-blocks-store-url`, accept `compression_config` to tune how files are written, matching the store's compression: a zstd level with an optional window in MiB (`best`, `better/32`), or a gzip level from `1` to `9`. For example `gs://bucket/merged-blocks?compression_config=best/32`. Files written with any setting are read back without configuration. An invalid value makes opening the store fail.
+
+- On zstd stores, `compression_config` also takes decoder settings, comma separated after the level or alone: `lowmem=false` gives each decoder a history buffer of twice the window, and `pool=<name>` reuses decoders across reads and across every store using that name, in place of the `default` pool. `pool=none` gives each file a decoder of its own. For example `--common-merged-blocks-store-url=gs://bucket/merged-blocks?compression_config=best/32,lowmem=false,pool=blocks` and `--substreams-state-store-url=gs://bucket/states?compression_config=better/16,pool=cache`. Substreams tier2 gets them through the URLs tier1 sends. Reading 100 MiB `best/32` merged blocks files 10 at a time, adding `lowmem=false` to the `default` pool used 70% less CPU and 57% more peak heap. `lowmem=false` only helps files larger than their window plus about 1 MiB.
+
+- `tools substreams prune-states`, `prune-outputs` and `purge`: `--delete-rate` (default `500`) caps deletions per second, `0` removes the cap.
+
+- `reader-node` and `reader-node-stdin` (not `reader-node-firehose`, which doesn't parse console lines) now decode the `FIRE INIT <version> <node_variant> <node_version>` line printed by every EVM Firehose tracer (geth and forks: Injective, BSC, Polygon/bor, etc) and map it to `sf.ethereum.type.v2.Block`, instead of writing an invalid `Payload.TypeUrl`.
+
+- `reader-node` and `reader-node-stdin` also decode `FIRE INIT <version> <protobuf_fully_qualified_type> <node_name> <node_version>`, trusting the given type and treating the trailing fields as informational, for any chain.
+
+- Substreams: `external_calls_<kind>` metering metrics (for example `external_calls_eth_call`), counting the calls made by WASM extensions. A batch counts for as many calls as it contains.
+
+- Substreams: `--substreams-tier1-allow-pruned-chain` lets tier1 serve modules (mappers and stores) whose initial block is below `--common-first-streamable-block`, after that block was raised (the chain was pruned). They run from the first streamable block on, and their stores resume from the snapshots taken before the pruning. A request is refused when a store has no snapshot at the first streamable block to resume from, or when a store has no initial block: every store must set one, at or above the first streamable block. Tier2 must run this version before the flag is set on tier1.
+
+### Changed
+
+- Go 1.27 or newer is now required to build.
+
+- Substreams: production-mode requests disconnected for being more than 2 segments behind the last final block now get `back-processing ended too far behind the last final block of the chain, please reconnect to process the gap in parallel` or `stream fell too far behind the last final block of the chain, please reconnect to process the gap in parallel` instead of `endpoint is shutting down, please reconnect`. Both are still `Unavailable`.
+
+- `tools resize-merged-blocks` now accepts equal `--source-bundle-size` and `--target-bundle-size` to rewrite merged-blocks files with different settings (ex: compression), after a confirmation prompt (`--force` skips it). It also clears the deprecated `payload_kind` and `payload_buffer` fields from every block written; the block data stays in `payload`.
+
+- `firehose` and `substreams-tier1` launched in the same process now share one forkable hub instead of each holding its own copy of the live blocks; on Solana that saves about 0.5 GiB per process. Firehose still streams complete blocks only.
+
+- The firehose hub keeps as many final blocks as the substreams-tier1 hub: two merged-blocks files worth, at least 200, instead of at least 500. Clients resuming between 200 and 500 blocks below the last irreversible block now read those blocks from merged-blocks files.
+
+- Apps running in the same process now share one session pool, created from `--common-session-plugin`, instead of each creating their own. With the `local://` plugin, firehose and substreams-tier1 running together now count against the same `max_sessions` and `max_sessions_per_organization` limits.
+
+- Bump `firehose-networks` to `v0.3.0`.
+
+- RPC pollers (`blockpoller`) print each `FIRE BLOCK` line 11-15x faster and no longer allocate several times the block size to do it: the line is built once in a reused buffer, with SIMD base64 encoding.
+
+- Subscribers to live blocks (relayer, firehose and substreams subscriptions to live) are no longer disconnected as soon as 100 blocks are waiting for them. On fast chains, a live source pausing for a few seconds and then sending its backlog at once filled those 100 slots before a subscriber could send the first block, disconnecting every subscriber at the same time. A subscriber is now disconnected when it has not caught up for `--common-live-subscriber-catch-up-timeout` (default `30s`), which catches one that is stuck or slower than the chain, or when `--common-live-subscriber-max-buffered-blocks` (default `10000`) blocks are waiting for it.
+
+- The relayer, firehose and substreams-tier1 no longer look up one-block files, nor log `block not linkable after one-block lookup`, when a live source sends a block they already have below LIB. With several `--relayer-source`, this happened every few seconds.
+
+- zstd stores (merged blocks, one-block files, substreams states) now read with decoders kept in a process-wide `default` pool when `compression_config` names no pool, and those decoders work on the reading goroutine instead of 4 background ones. Reading 100 MiB `best/32` merged blocks files 10 at a time, that used 6% less CPU and 53% less peak heap; on 2 MiB files, 42% less CPU. `compression_config=pool=none` brings back a decoder per file.
+
+- Firehose, substreams-tier1 and the relayer now detect a relayer or reader that disappears without closing the connection (for example a host reboot) in about 40s instead of 5 minutes. They send gRPC keepalive pings after `30s` without data and drop the connection after `10s` without an answer.
+
+- Substreams: tier2 logs `refusing Substreams ProcessRange request` and the gRPC `finished streaming call with code ResourceExhausted` line at `Debug` instead of `Info`. The `substreams_tier2_rejected_request_counter` metric still counts the refusals by reason.
+
+### Performance improvements
+
+- Substreams: tier1 handles Ethereum partial blocks about 20x faster, with almost no allocations. It reads the transaction traces straight from the encoded block and drops the ones already sent by copying bytes, instead of decoding and re-encoding the whole block for every partial.
+
+- Merged blocks are read without copying their payload, which halves the memory allocated per merged-blocks file read (25.8 MiB instead of 50.8 MiB for 100 blocks of 256 KiB).
+
+### Removed
+
+- Removed the `--firehose-discard-partial-blocks` flag. Firehose clients only receive complete blocks, and the hub firehose builds when it runs without substreams-tier1 never receives partial blocks from the relayer, so the flag no longer did anything. Operators setting it must drop it, as an unknown flag stops the process from starting.
+
+### Deprecated
+
+- The `SOURCE_CHAN_SIZE` environment variable, replaced by `--common-live-subscriber-max-buffered-blocks`. It is still used when the flag is not set, with a warning at startup.
+
+### Security
+
+- Bump `golang.org/x/net` to `v0.61.0` to fix CVE-2026-78663 (critical), CVE-2026-78669, CVE-2026-78660 and CVE-2026-78659 (high).
+
+- Bump OpenTelemetry to `v1.47.0` to fix known vulnerabilities.
+
+## v1.20.1
+
+### Changed
+
+- The reader decodes the base64 payload of `FIRE BLOCK` lines about 2.4 times faster (about 10 GiB/s instead of 4 GiB/s, measured on an Apple M4 Max), by using `github.com/emmansun/base64` instead of the standard `encoding/base64`.
+
+## v1.20.0
+
+### Added
+
+- New `--substreams-tier1-max-request-duration` flag (default `0`, no limit). When set, a Substreams request that has run for that long is ended gracefully: its stores are quick-saved (with `--substreams-tier1-quicksave-store`) and the client is told to reconnect. Set it a bit under the stream duration limit of the load balancer serving requests.
+- Reader: the base64 payload of a `FIRE BLOCK` line is decoded while the line is read, instead of after the whole line was copied into a string. A block no longer crashes the reader when it is bigger than the old 200 MiB line buffer, and reading a block needs about 1.5 times its line size in memory instead of about 3 times (measured on a 512 MiB block: 1.1 GiB peak instead of 2.2 GiB). This applies to chains using the default `firecore.NewConsoleReader`; chains with their own console reader keep receiving `FIRE BLOCK` lines as text.
+- gRPC clients receive responses up to 2 GiB instead of 1 GiB, and servers send responses up to 2 GiB (bumped `dgrpc`), so a block up to 2 GiB goes from the reader through the relayer to Firehose and Substreams. Request limits are unchanged. External clients need their own receive limit raised to get blocks that big. Substreams modules cannot take a block that big: wasm32 has 4 GiB for the block, its decoded form and the output.
+- `--relayer-source` accepts a `retry_interval=<duration>` query parameter (e.g. `my.source:12345?retry_interval=120s`) setting the minimum time between two connection attempts to that source. Use it for a rescuer or fallback endpoint that is expected to be down most of the time, so the relayer does not dial it (and log the failure) every 5s. `retry_interval` must be at least `5s`, and since sources are checked every 5s it is rounded up to the next 5s increment (e.g. `12s` behaves as `15s`). Without it, a source is retried every 5s.
+- New `--substreams-tier1-cpu-eviction-order` flag (default `dev,prod-cached,prod-catchup`) listing the request classes the CPU eviction may cancel, least important first. A class left out is never cancelled, so **live production requests are no longer cancelled** unless `prod-live` is added to the order. See the `substreams` bump below for the new `prod-cached` class.
+- Added `--substreams-tier1-squasher-plugin` so `fire{chain} start` can point `substreams-tier1` at a remote store-merge (squasher) process. Empty or `local://` keeps in-process squashing. Production uses `grpcs://host?secret=<token>` — TLS, port defaults to 443, `secret` is sent as the `authorization` header. Plaintext local/dev uses `grpc://host:port`. Extra TLS/plaintext toggles stay on the DSN query string (`insecure=true`, `plaintext=false`).
+- New `rpc.RollingStrategySequential`, a rolling strategy that walks the client pool in order from a configurable starting client, rolling forward through the rest for failover. `rpc.WithSpreadStart()` spreads that *starting* client round-robin across successive `WithClients`/`WithClientsContext` calls, so concurrent block fetches (e.g. `blockpoller`'s batched polling) don't all hammer the same provider first; failover order after the starting point is unchanged. Without the option, behavior matches the now-deprecated `RollingStrategyAlwaysUseFirst`. `StickyRollingStrategy` is unaffected either way.
+
+### Changed
+
+- `--reader-node-line-buffer-size` is now the normal size of the line buffer (default 100 MiB, at least 32 KiB). The buffer grows past it in pieces of that size for a longer line, up to `2861913428` bytes: the longest line whose block, with 1 MiB for the message around it, fits in a 2 GiB response. Each time 50 blocks in a row used less than half of it, it shrinks by half, keeping whole pieces and never going below the normal size. Reading the longest line takes up to 5.4 GiB of memory, and a grown buffer stays allocated until it shrinks back.
+- `--reader-node-line-buffer-size` outside of `32768` to `2861913428` bytes is now refused at startup instead of being used as is. A reader configured above that range does not start until the value is lowered.
+- The reader now reads the node output directly, instead of through a channel of lines holding up to 1000 of them. A reader that falls behind stops reading the node's stdout sooner, which blocks the node instead of buffering more lines in the reader.
+- With `--reader-node-debug-firehose-logs`, a `FIRE BLOCK` line is logged as `FIRE BLOCK <header> <payload: N bytes decoded>` instead of its full base64 text, so a big block no longer writes hundreds of megabytes into the logs.
+- Bumped `bstream` for `MultiplexedSourceWithRetryIntervals`, the option backing the new `retry_interval` on `--relayer-source`.
+- Bumped `substreams` to [v1.23.0](https://github.com/streamingfast/substreams/compare/1b7d09c2de7b...v1.23.0):
+
+  - Server: production requests that fall far behind the chain are disconnected so they reconnect and back-process the gap in parallel. The main case is a long back-processing: when it finishes, the request would otherwise process everything the chain produced in the meantime linearly on tier1, which can take hours. A production request is disconnected when it is more than 2 segments behind the last final block (rounded down to a segment), checked when back-processing finishes and at every segment boundary while streaming final blocks. It gets the same `Unavailable` "endpoint is shutting down, please reconnect" error as a tier1 restart, so clients reconnecting from their cursor pick up where they left off. Set the `SUBSTREAMS_MAX_LINEAR_HANDOFF_LAG_SEGMENTS` environment variable on tier1 to change the number of segments.
+
+  - Server: the CPU eviction order is configurable. Classes are cancelled in the configured order, highest burn first within a class and oldest first on a tie. A new `prod-cached` class covers production requests that have not processed a block on tier1 yet, only streaming outputs cached by tier2. They run no wasm on tier1, so `--substreams-tier1-cpu-eviction-min-burn-cores` does not apply to them (`--substreams-tier1-cpu-eviction-min-age` still does), and since their CPU cost is unknown, a round of eviction stops right after cancelling one; the next round, after `--substreams-tier1-cpu-eviction-cooldown`, measures what it freed. The `substreams_tier1_evicted_requests_counter` metric gains the `prod-cached` class.
+
+  - Server: per-store lines are logged at `Debug` instead of `Info`: `using mmap KV store`, `using in-memory KV store`, `flushing store at boundary`, `merged partial into full store`, `deleting partial store`. `squashing time metrics` stays at `Info`.
+
+  - Server: the tier1 block hub logs `processing block` at `Debug`, except for one line every 10 seconds kept at `Info` to show progress. `linking live block using one blocks` moves up to `Info`, so a one-block store lookup after an unlinkable live block shows in production logs.
+
+  - Server: tier1 can merge stores on a remote squasher selected by `--substreams-tier1-squasher-plugin`. Empty or `local://` stays in-process. `grpc://` / `grpcs://` are registered from `github.com/streamingfast/substreams/squash/grpc`. Each remote run is one RPC per store module; if the remote is unreachable that run is squashed locally and later runs stay local until one succeeds. A live remote that returns an application error still fails the request.
+
+### Deprecated
+
+- `rpc.RollingStrategyAlwaysUseFirst` / `rpc.NewRollingStrategyAlwaysUseFirst`, use `rpc.RollingStrategySequential` / `rpc.NewRollingStrategySequential` instead. The old name is now a type alias with an unchanged, no-option constructor, so existing callers keep compiling as-is.
+
+### Security
+
+- Bumped `google.golang.org/grpc` to `v1.85.0-dev.0.20260825072537-93e31b48545e`, the commit that fixes CVE-2026-84445. `v1.84.0` is still in the affected range; this pin comes in with `substreams` `v1.23.0`.
+
 ## v1.19.0
+
+### Fixed
+
+- The `ready{app="firehose"}` Prometheus metric now remains `0` while the firehose waits to read the first streamable block and only changes to `1` after initialization succeeds, including when serving from merged blocks without a live source.
 
 ### Added
 
