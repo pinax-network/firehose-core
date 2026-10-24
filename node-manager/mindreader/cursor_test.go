@@ -25,11 +25,13 @@ func TestCursorTracker_AdvancesOverStoredPrefixOnly(t *testing.T) {
 	// "b" and "c" stored before "a": the cursor waits for "a"
 	tracker.Uploaded("c")
 	tracker.Uploaded("b")
+	tracker.Flush()
 	cursor, err := ReadReaderCursor(tracker.Path())
 	require.NoError(t, err)
 	assert.Nil(t, cursor)
 
 	tracker.Uploaded("a")
+	tracker.Flush()
 	cursor, err = ReadReaderCursor(tracker.Path())
 	require.NoError(t, err)
 	require.NotNil(t, cursor)
@@ -50,16 +52,19 @@ func TestCursorTracker_Values(t *testing.T) {
 	tracker.Queued("c", testBlock(12, "c"))
 
 	tracker.Uploaded("a")
+	tracker.Flush()
 	cursor, _ := ReadReaderCursor(tracker.Path())
 	assert.Equal(t, &CursorValue{Block: CursorBlockRef{Num: 10, ID: "a"}, Value: "va"}, cursor.Value)
 
 	tracker.Uploaded("b")
 	tracker.Uploaded("c")
+	tracker.Flush()
 	cursor, _ = ReadReaderCursor(tracker.Path())
 	assert.Equal(t, CursorBlockRef{Num: 12, ID: "c"}, cursor.Block)
 	assert.Equal(t, &CursorValue{Block: CursorBlockRef{Num: 11, ID: "b"}, Value: "vb"}, cursor.Value, "c has no value yet")
 
 	tracker.SetValue(12, "c", "vc")
+	tracker.Flush()
 	cursor, _ = ReadReaderCursor(tracker.Path())
 	assert.Equal(t, &CursorValue{Block: CursorBlockRef{Num: 12, ID: "c"}, Value: "vc"}, cursor.Value)
 
@@ -68,6 +73,7 @@ func TestCursorTracker_Values(t *testing.T) {
 	require.NoError(t, err)
 	tracker.Queued("d", testBlock(13, "d"))
 	tracker.Uploaded("d")
+	tracker.Flush()
 	cursor, _ = ReadReaderCursor(tracker.Path())
 	assert.Equal(t, CursorBlockRef{Num: 13, ID: "d"}, cursor.Block)
 	assert.Equal(t, "vc", cursor.Value.Value)
@@ -83,6 +89,7 @@ func TestCursorTracker_BlockPrintedTwice(t *testing.T) {
 	tracker.Uploaded("a")
 	tracker.Uploaded("b")
 
+	tracker.Flush()
 	cursor, _ := ReadReaderCursor(tracker.Path())
 	assert.Equal(t, CursorBlockRef{Num: 11, ID: "b"}, cursor.Block)
 }

@@ -83,6 +83,9 @@ func (a *Archiver) Start(ctx context.Context) {
 		a.fileUploader.Shutdown(err)
 		<-a.fileUploader.Done()
 		a.logger.Info("file uploader terminated")
+		if a.cursorTracker != nil {
+			a.cursorTracker.Flush()
+		}
 	})
 
 	a.OnTerminated(func(err error) {

@@ -68,6 +68,11 @@ type CursorTracker struct {
 	// recent are the last stored blocks, so a cursor value arriving after its block was
 	// stored still applies
 	recent map[string]uint64
+
+	// the file is written by one goroutine, with the latest cursor each time: uploads
+	// complete faster than files can be synced
+	dirty   chan struct{}
+	writeMu sync.Mutex
 }
 
 type trackedBlock struct {
@@ -87,14 +92,21 @@ func NewCursorTracker(workingDirectory string, logger *zap.Logger) (*CursorTrack
 	}
 
 	logger.Info("reader cursor loaded", zap.String("path", path), zap.Any("cursor", current))
-	return &CursorTracker{
+	t := &CursorTracker{
 		path:    path,
 		logger:  logger,
 		byFile:  map[string][]*trackedBlock{},
 		values:  map[string]string{},
 		current: current,
 		recent:  map[string]uint64{},
-	}, nil
+		dirty:   make(chan struct{}, 1),
+	}
+	go func() {
+		for range t.dirty {
+			t.Flush()
+		}
+	}()
+	return t, nil
 }
 
 func (t *CursorTracker) Path() string {
@@ -195,10 +207,33 @@ func (t *CursorTracker) remember(ref CursorBlockRef) {
 	t.recent[ref.ID] = ref.Num
 }
 
-// write replaces the cursor file atomically and syncs it, so a crash leaves either the
-// previous cursor or this one.
+// write has the cursor file written with the current cursor. Called with mu held.
 func (t *CursorTracker) write() {
-	if err := writeFileSynced(t.path, t.current); err != nil {
+	select {
+	case t.dirty <- struct{}{}:
+	default:
+	}
+}
+
+// Flush writes the current cursor now. The file is replaced atomically and synced, so a crash
+// leaves either the previous cursor or this one.
+func (t *CursorTracker) Flush() {
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+
+	t.mu.Lock()
+	if t.current == nil {
+		t.mu.Unlock()
+		return
+	}
+	snapshot := *t.current
+	if snapshot.Value != nil {
+		value := *snapshot.Value
+		snapshot.Value = &value
+	}
+	t.mu.Unlock()
+
+	if err := writeFileSynced(t.path, &snapshot); err != nil {
 		t.logger.Error("writing reader cursor", zap.String("path", t.path), zap.Error(err))
 	}
 }
