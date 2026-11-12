@@ -8,6 +8,60 @@ Operators, you should copy/paste content of this content straight to your projec
 
 If you were at `firehose-core` version `1.0.0` and are bumping to `1.1.0`, you should copy the content between those 2 version to your own repository, replacing placeholder value `fire{chain}` with your chain's own binary.
 
+## v1.21.2
+
+### Added
+
+- Reader: `reader_node_one_block_upload_pending_files` and `reader_node_one_block_upload_oldest_pending_seconds` report the one-block files waiting in the local staging directory and how long the oldest has waited, measured at each upload pass. When the one-block store is slow or down the reader keeps reading blocks and serving its relayers, and its `/healthz` stays ready, so this backlog was not visible anywhere until the disk filled up.
+- Tools: `firecore tools stats-merged-blocks` no longer leaves files missing the `datasize`/`itemcount`/`timestamp` annotation out of its total. Their compressed size comes from the listing, and their block count and uncompressed size are estimated from the annotated files in the range (same blocks per file, same compression ratio). They are reported apart as `unannotated` in `--json` and as an `UNANNOTATED*` row in the table, and are included in `total`. The months still cover annotated files only. `unannotated_files` is unchanged.
+- Tools: `firecore tools resize-merged-blocks` writes the `datasize`, `itemcount` and `timestamp` object metadata on every file it writes to Google Cloud Storage, as the merger does. Files it wrote before carry none and need `firecore tools annotate-merged-blocks`.
+
+### Fixed
+
+- Tools: `firecore tools stats-merged-blocks` now reports the first listed file as `first_block_seen` (and `Blocks seen` in the table) even when that file is unannotated. It used to report the first annotated file instead.
+
+### Changed
+
+- Merger: logs its unlinkable-blocks limit once at startup (`merger unlinkable-blocks circuit breaker configured`, with `max_unlinkable_blocks` and `source`), so operators can confirm a `MERGER_MAX_UNLINKABLE_BLOCKS` override took effect. The limit is now resolved once per run instead of on every walk; behavior is unchanged.
+- Bumped `github.com/klauspost/compress` to `v1.20.2` to fix CVE-2026-116591.
+- Bumped `substreams` to `v1.27.0`, see its [release notes](https://github.com/streamingfast/substreams/releases/tag/v1.27.0).
+- Bumped `dstore`: an S3 upload now fails when its reader fails partway instead of storing a truncated object, S3 copies run server-side, and zstd stores accept `compression_config` (level, window, decoder `lowmem` and pool) in the store URL.
+- Bumped `dsession` to fix two worker counter leaks.
+
+### Fixed
+
+- Merger: jumping ahead to bundles published by another merger no longer lets the pruner delete one-block files of bundles still being uploaded.
+- Merger: when two mergers run against the same stores, the slower one no longer shuts down when the faster one prunes the one-block files of a bundle it is still merging. If the merge fails and the bundle already exists in the merged-blocks store, it is treated as merged.
+
+## v1.21.2-rc.2
+
+### Changed
+
+- Firehose: the `incoming firehose Blocks request` and `processing incoming blocks request` log lines now carry `auth_method`, `auth_jwt_lifetime_bucket`, `auth_jwt_iat` and `auth_jwt_exp` when the auth plugin returns the `x-auth-method`, `x-auth-jwt-lifetime-bucket`, `x-auth-jwt-iat` and `x-auth-jwt-exp` headers. Fields are omitted when the headers are absent.
+- Substreams: bump `github.com/streamingfast/substreams` to pick up auth-method logging, the `incoming Substreams Blocks request` and estimate log lines now carry `auth_method`, `auth_jwt_lifetime_bucket`, `auth_jwt_iat` and `auth_jwt_exp` under the same conditions.
+
+### Security
+
+- `golang.org/x/net` is updated from `v0.61.0` to `v0.62.0` to fix CVE-2026-78661 (High).
+
+## v1.21.2-rc.1
+
+### Added
+
+- Substreams: `--substreams-tier1-status-page-template` takes the path to a Go html/template file that tier1 serves to anything doing `GET /` on its endpoint, with the chain name, readiness, liveness and head block (`{{ .ChainName }}`, `{{ .Ready }}`, `{{ .Live }}`, `{{ .HeadBlockNum }}`, `{{ .HeadBlockID }}`, `{{ .HeadBlockTime }}`). A client asking for `application/json` gets the same data as JSON. The file is reloaded when it changes. The page is served whatever the `Accept` header says and is not subject to `--substreams-tier1-enforce-compression`, like `/healthz`.
+
+### Changed
+
+- Reader: `--reader-node-blocks-chan-capacity` now also sets how many blocks a subscriber of the reader (a relayer) can lag behind before the reader disconnects it, at least `200` (the previous fixed size). Blocks that pile up in the reader during a stall are sent in one burst when it resumes, and a burst over 200 blocks disconnected every relayer at once, after which they could fail to link the next blocks. Applies to `reader-node` and `reader-node-stdin`. If you raised the flag, a lagging relayer now holds up to that many blocks in the reader's memory before being disconnected.
+
+### Fixed
+
+- `tools relayer stream` and `tools relayer write-one-blocks` now read the `?secret=<key>` query parameter and `${ENV_VAR}` interpolation in `<source>`, like `--relayer-source` does. Before, the whole string including `?secret=...` was used as the gRPC address and the secret was never sent.
+
+- `github.com/go-jose/go-jose/v4` is updated from `v4.1.4` to `v4.1.6` to fix CVE-2026-116587 (High, inefficient algorithmic complexity).
+
+- Relayer: `source_head_block_time_drift` no longer moves back when a source sends a block older than one it already sent, such as a fork block for a past slot that arrives late. A single late orphan made every source look minutes behind until the next block, which could falsely trigger lag alerts and rescuers.
+
 ## v1.21.1
 
 ### Changed
