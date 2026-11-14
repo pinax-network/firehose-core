@@ -142,6 +142,7 @@ func readBlockSegment[B firecore.Block](
 	fileBlockSize uint64,
 	blockRange types.BlockRange,
 	printDetails PrintDetails,
+	hideShortSegments bool,
 ) *segmentContent {
 	content := &segmentContent{lowestBlockSeen: firecore.MaxUint64}
 
@@ -204,7 +205,7 @@ func readBlockSegment[B firecore.Block](
 		}
 
 		if errors.Is(err, io.EOF) {
-			if seenBlockCount < expectedBlockCount(segment, fileBlockSize) {
+			if !hideShortSegments && seenBlockCount < expectedBlockCount(segment, fileBlockSize) {
 				content.trailer = append(content.trailer, fmt.Sprintf("🔶 Segment %s contained only %d blocks (< %d), this can happen on some chains\n", segment, seenBlockCount, fileBlockSize))
 			}
 

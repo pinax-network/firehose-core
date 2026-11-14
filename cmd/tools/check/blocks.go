@@ -41,6 +41,11 @@ type MergedBlocksCheckOptions struct {
 	// the output is the same as a sequential run and at most Parallel files are held in
 	// memory. Zero or one reads the files one at a time. Not supported with PrintFull.
 	Parallel int
+
+	// HideShortSegments drops the line printed for each file holding fewer blocks than the
+	// bundle size. On chains that skip block numbers (Solana skips slots) most files are
+	// short, and the line drowns the real findings.
+	HideShortSegments bool
 }
 
 func (o MergedBlocksCheckOptions) readAllBlocks() bool {
@@ -123,7 +128,7 @@ func CheckMergedBlocksWithOptions[B firecore.Block](ctx context.Context, chain *
 	// read downloads and checks one file, touching nothing shared, so files can be read concurrently
 	read := func(ctx context.Context, item *checkItem) (*checkItem, error) {
 		if readAllBlocks {
-			item.content = readBlockSegment(ctx, chain, blocksStore, item.segment, item.baseNum, fileBlockSize, blockRange, options.PrintDetails)
+			item.content = readBlockSegment(ctx, chain, blocksStore, item.segment, item.baseNum, fileBlockSize, blockRange, options.PrintDetails, options.HideShortSegments)
 		}
 		return item, nil
 	}
